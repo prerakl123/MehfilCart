@@ -42,7 +42,7 @@ async def verify_otp_and_authenticate(
     redis: aioredis.Redis,
     phone: str,
     otp: str,
-) -> TokenResponse:
+) -> tuple[TokenResponse, str]:
     """
     Verify OTP, create or fetch user, and issue JWT tokens.
     Returns tokens and user info.
@@ -74,13 +74,14 @@ async def verify_otp_and_authenticate(
         refresh_token,
     )
 
-    return TokenResponse(
+    token_response = TokenResponse(
         access_token=access_token,
         user_id=str(user.id),
         display_name=user.display_name,
         role=role,
         restaurant_id=str(restaurant_id) if restaurant_id else None,
     )
+    return token_response, refresh_token
 
 
 async def refresh_access_token(

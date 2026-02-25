@@ -8,6 +8,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import (
     BadRequestException, ForbiddenException, NotFoundException,
@@ -16,6 +17,15 @@ from app.models.order import Order, OrderItem, OrderStatus
 from app.models.session import Session, SessionStatus
 from app.models.user import User
 from app.services import cart_service
+
+
+def _order_load_options():
+    """Standard eager-load options for Order queries returned to the API."""
+    return [
+        selectinload(Order.items).selectinload(OrderItem.menu_item),
+        selectinload(Order.items).selectinload(OrderItem.adder),
+        selectinload(Order.submitter),
+    ]
 
 
 async def submit_order(
@@ -75,12 +85,18 @@ async def submit_order(
     # Clear the Redis cart
     await cart_service.clear_cart(redis, session.id)
 
-    return order
+    # Re-query with eager loads for response serialization
+    result = await db.execute(
+        select(Order).options(*_order_load_options()).where(Order.id == order.id)
+    )
+    return result.scalar_one()
 
 
 async def get_order(db: AsyncSession, order_id: UUID) -> Order:
     """Fetch an order by ID."""
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(
+        select(Order).options(*_order_load_options()).where(Order.id == order_id)
+    )
     order = result.scalar_one_or_none()
     if order is None:
         raise NotFoundException("Order not found.")
@@ -95,7 +111,7 @@ async def list_orders(
     offset: int = 0,
 ) -> tuple[list[Order], int]:
     """List orders with optional filters. Returns (orders, total_count)."""
-    query = select(Order)
+    query = select(Order).options(*_order_load_options())
     if session_id:
         query = query.where(Order.session_id == session_id)
     if status:

@@ -153,11 +153,20 @@ API_PREFIX = "/api/v1"
 for router in all_routers:
     app.include_router(router, prefix=API_PREFIX)
 
-
 # -- WebSocket Endpoint --
 from app.websocket.handlers import websocket_endpoint  # noqa: E402
 
 app.add_api_websocket_route("/ws", websocket_endpoint)
+
+
+for router in all_routers:
+    for r in router.routes:
+        if hasattr(r, "name"):
+            logger.info("Registered route: %s %s -> %s", r.methods, r.path, r.name)
+        if hasattr(r, "endpoint"):
+            logger.debug("Route endpoint: %s", r.endpoint)
+        if hasattr(r, "websocket_endpoint"):
+            logger.info("Registered WebSocket route: %s -> %s", r.path, r.websocket_endpoint)
 
 
 # -- Health Check --

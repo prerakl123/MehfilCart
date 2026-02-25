@@ -1,9 +1,10 @@
 """Auth router -- OTP request, verification, token refresh, logout."""
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.exceptions import UnauthorizedException
@@ -43,15 +44,17 @@ async def verify_otp(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    token_response = await auth_service.verify_otp_and_authenticate(
+    token_response, refresh_token = await auth_service.verify_otp_and_authenticate(
         db, redis, body.phone, body.otp
     )
-    # TODO: Set refresh token as httpOnly cookie
-    # response.set_cookie(
-    #     key="refresh_token", value=refresh_token,
-    #     httponly=True, secure=True, samesite="lax",
-    #     max_age=settings.JWT_REFRESH_TOKEN_EXPIRY_DAYS * 86400,
-    # )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite='lax',
+        max_age=settings.JWT_REFRESH_TOKEN_EXPIRY_DAYS * 86400
+    )
     return token_response
 
 
@@ -59,14 +62,14 @@ async def verify_otp(
     "/refresh",
     response_model=TokenResponse,
     summary="Refresh Access Token",
-    description="Exchange a valid refresh token for a new access token.",
+    description="Exchange a valid refresh token cookie for a new access token.",
 )
 async def refresh_token(
-    body: dict,  # Expects { "refresh_token": "..." }
+    request: Request,
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
-    refresh = body.get("refresh_token")
+    refresh = request.cookies.get("refresh_token")
     if not refresh:
         raise UnauthorizedException("Refresh token required.")
 

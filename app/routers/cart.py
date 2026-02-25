@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.auth import MessageResponse
 from app.schemas.cart import CartItemCreate, CartItemUpdate, CartItemResponse, CartResponse
 from app.services import cart_service, session_service, menu_service
+from app.websocket.manager import ws_manager
 
 router = APIRouter(prefix="/sessions/{session_id}/cart", tags=["Cart"])
 
@@ -48,7 +49,7 @@ async def add_cart_item(
     session = await session_service.get_session(db, session_id)
     menu_item = await menu_service.get_menu_item(db, body.menu_item_id)
 
-    return await cart_service.add_item(
+    result = await cart_service.add_item(
         redis=redis,
         session=session,
         user=current_user,
@@ -59,6 +60,14 @@ async def add_cart_item(
         customizations=body.customizations,
         notes=body.notes,
     )
+
+    # Broadcast updated cart to the session
+    updated_cart = await cart_service.get_cart(redis, session_id)
+    await ws_manager.broadcast_to_room(
+        f"session:{session_id}", "cart:updated", updated_cart.model_dump()
+    )
+
+    return result
 
 
 @router.patch(
@@ -76,7 +85,7 @@ async def update_cart_item(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     session = await session_service.get_session(db, session_id)
-    return await cart_service.update_item(
+    result = await cart_service.update_item(
         redis=redis,
         session=session,
         user=current_user,
@@ -85,6 +94,14 @@ async def update_cart_item(
         customizations=body.customizations,
         notes=body.notes,
     )
+
+    # Broadcast updated cart to the session
+    updated_cart = await cart_service.get_cart(redis, session_id)
+    await ws_manager.broadcast_to_room(
+        f"session:{session_id}", "cart:updated", updated_cart.model_dump()
+    )
+
+    return result
 
 
 @router.delete(
@@ -102,4 +119,11 @@ async def remove_cart_item(
 ):
     session = await session_service.get_session(db, session_id)
     await cart_service.remove_item(redis, session, current_user, item_id)
+
+    # Broadcast updated cart to the session
+    updated_cart = await cart_service.get_cart(redis, session_id)
+    await ws_manager.broadcast_to_room(
+        f"session:{session_id}", "cart:updated", updated_cart.model_dump()
+    )
+
     return MessageResponse(message="Item removed from cart.")

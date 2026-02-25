@@ -48,6 +48,24 @@ async def get_session(
     return await session_service.get_session(db, session_id)
 
 
+@router.get(
+    "/table/{table_id}/active",
+    response_model=SessionResponse,
+    summary="Get Active Session for Table",
+    description="Retrieve the active session for a table, if any.",
+)
+async def get_active_session_for_table(
+    table_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await session_service.get_active_session_for_table(db, table_id)
+    if not session:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("No active session found for this table.")
+    return session
+
+
 @router.patch(
     "/{session_id}",
     response_model=SessionResponse,

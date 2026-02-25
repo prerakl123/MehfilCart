@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -90,6 +91,22 @@ async def update_restaurant(
     return await admin_service.update_restaurant(db, restaurant_id, body)
 
 
+@router.delete(
+    "/restaurants/{restaurant_id}",
+    response_model=MessageResponse,
+    summary="Delete Restaurant",
+    description="Delete a restaurant (Super Admin only).",
+    dependencies=[_super_admin_dep],
+)
+async def delete_restaurant(
+    restaurant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await admin_service.delete_restaurant(db, restaurant_id)
+    return MessageResponse(message="Restaurant deleted successfully.")
+
+
 @router.get(
     "/dashboard/{restaurant_id}",
     response_model=DashboardStats,
@@ -139,6 +156,29 @@ async def create_table(
     return await admin_service.create_table(db, restaurant_id, body)
 
 
+@router.get(
+    "/tables/{restaurant_id}/{table_id}/qr",
+    summary="Get Table QR Code",
+    description="Returns the QR code PNG image for a table.",
+    dependencies=[_admin_dep],
+)
+async def get_table_qr(
+    restaurant_id: UUID,
+    table_id: UUID,
+    base_url: str | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.utils.qr import generate_table_qr_url, generate_qr_image
+    from app.core.config import settings
+
+    # Use provided base_url or fallback to app settings
+    url = generate_table_qr_url(str(restaurant_id), str(
+        table_id), base_url=base_url or settings.APP_BASE_URL)
+    img_bytes = generate_qr_image(url)
+    return Response(content=img_bytes, media_type="image/png")
+
+
 @router.patch(
     "/tables/{restaurant_id}/{table_id}",
     response_model=TableResponse,
@@ -154,6 +194,23 @@ async def update_table(
     db: AsyncSession = Depends(get_db),
 ):
     return await admin_service.update_table(db, table_id, body)
+
+
+@router.delete(
+    "/tables/{restaurant_id}/{table_id}",
+    response_model=MessageResponse,
+    summary="Delete Table",
+    description="Delete a table.",
+    dependencies=[_admin_dep],
+)
+async def delete_table(
+    restaurant_id: UUID,
+    table_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await admin_service.delete_table(db, table_id)
+    return MessageResponse(message="Table deleted successfully.")
 
 
 # -- Staff --

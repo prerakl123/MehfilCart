@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     # -- Server --
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
-    DEBUG: bool = True
+    DEBUG: bool = False
+    APP_BASE_URL: str = "http://localhost:8000"
 
     # -- Logging --
     LOG_LEVEL: str = "INFO"

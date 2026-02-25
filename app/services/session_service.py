@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.exceptions import (
@@ -20,13 +21,23 @@ from app.models.table import Table
 from app.models.user import User
 
 
+def _session_load_options():
+    """Standard eager-load options for Session queries returned to the API."""
+    return [
+        selectinload(Session.members).selectinload(SessionMember.user),
+        selectinload(Session.table),
+    ]
+
+
 async def create_session(db: AsyncSession, user: User, table_id: UUID) -> Session:
     """
     Create a new ordering session at a table. The user becomes the Host.
     Ensures no other active session exists at the same table.
     """
     # Verify table exists and is active
-    result = await db.execute(select(Table).where(Table.id == table_id))
+    result = await db.execute(
+        select(Table).options(selectinload(Table.restaurant)).where(Table.id == table_id)
+    )
     table = result.scalar_one_or_none()
     if table is None or not table.is_active:
         raise NotFoundException("Table not found or inactive.")
@@ -74,16 +85,34 @@ async def create_session(db: AsyncSession, user: User, table_id: UUID) -> Sessio
     db.add(host_member)
     await db.flush()
 
-    return session
+    # Re-query with eager loads so the response serializer can access members
+    result = await db.execute(
+        select(Session).options(*_session_load_options()).where(Session.id == session.id)
+    )
+    return result.scalar_one()
 
 
 async def get_session(db: AsyncSession, session_id: UUID) -> Session:
     """Fetch a session by ID, raising NotFoundException if missing."""
-    result = await db.execute(select(Session).where(Session.id == session_id))
+    result = await db.execute(
+        select(Session).options(*_session_load_options()).where(Session.id == session_id)
+    )
     session = result.scalar_one_or_none()
     if session is None:
         raise NotFoundException("Session not found.")
     return session
+
+
+async def get_active_session_for_table(db: AsyncSession, table_id: UUID) -> Session | None:
+    """Fetch the currently active session for a table, if any."""
+    result = await db.execute(
+        select(Session).options(*_session_load_options()).where(
+            Session.table_id == table_id,
+            Session.status.in_(
+                [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED])
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def request_join(db: AsyncSession, session_id: UUID, user: User) -> SessionMember:

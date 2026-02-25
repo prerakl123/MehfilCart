@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
 from app.models.order import Order, OrderStatus
@@ -96,7 +97,14 @@ async def update_restaurant(
     return restaurant
 
 
+async def delete_restaurant(db: AsyncSession, restaurant_id: UUID) -> None:
+    """Delete a restaurant (Super Admin only)."""
+    restaurant = await get_restaurant(db, restaurant_id)
+    await db.delete(restaurant)
+    await db.flush()
+
 # -- Dashboard --
+
 
 async def get_dashboard_stats(db: AsyncSession, restaurant_id: UUID) -> DashboardStats:
     """Compute dashboard statistics for a restaurant."""
@@ -170,8 +178,7 @@ async def create_table(
     await db.flush()
 
     # Generate QR URL
-    table.qr_code_url = generate_table_qr_url(
-        str(restaurant_id), str(table.id))
+    table.qr_code_url = generate_table_qr_url(str(restaurant_id), str(table.id))
     await db.flush()
     return table
 
@@ -190,6 +197,16 @@ async def update_table(
 
     await db.flush()
     return table
+
+
+async def delete_table(db: AsyncSession, table_id: UUID) -> None:
+    """Delete a table."""
+    result = await db.execute(select(Table).where(Table.id == table_id))
+    table = result.scalar_one_or_none()
+    if table is None:
+        raise NotFoundException("Table not found.")
+    await db.delete(table)
+    await db.flush()
 
 
 async def list_tables(db: AsyncSession, restaurant_id: UUID) -> list[Table]:
@@ -279,12 +296,18 @@ async def update_config(
 async def list_orders(db: AsyncSession, restaurant_id: UUID) -> list[Order]:
     """List all orders for a given restaurant's tables within the last 24 hours."""
     from datetime import datetime, timedelta, timezone
+    from app.models.order import OrderItem
     cutoff = datetime.now(timezone.utc) - timedelta(days=1)
 
     query = (
         select(Order)
         .join(Session, Order.session_id == Session.id)
         .join(Table, Session.table_id == Table.id)
+        .options(
+            selectinload(Order.items).selectinload(OrderItem.menu_item),
+            selectinload(Order.items).selectinload(OrderItem.adder),
+            selectinload(Order.submitter),
+        )
         .where(
             Table.restaurant_id == restaurant_id,
             Order.submitted_at >= cutoff
@@ -298,11 +321,16 @@ async def list_orders(db: AsyncSession, restaurant_id: UUID) -> list[Order]:
 async def list_sessions(db: AsyncSession, restaurant_id: UUID) -> list[Session]:
     """List all active or recent sessions for a given restaurant."""
     from datetime import datetime, timedelta, timezone
+    from app.models.session import SessionMember
     cutoff = datetime.now(timezone.utc) - timedelta(hours=12)
 
     query = (
         select(Session)
         .join(Table, Session.table_id == Table.id)
+        .options(
+            selectinload(Session.members).selectinload(SessionMember.user),
+            selectinload(Session.table),
+        )
         .where(
             Table.restaurant_id == restaurant_id,
             (Session.status != SessionStatus.CLOSED) | (

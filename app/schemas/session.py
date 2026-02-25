@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.session import SessionStatus, MemberRole, MemberStatus
 
@@ -23,13 +23,29 @@ class SessionMemberResponse(BaseModel):
     """A session member in API responses."""
     id: UUID
     user_id: UUID
-    display_name: str | None
-    phone: str
+    display_name: str | None = None
+    phone: str | None = None
     role: MemberRole
     status: MemberStatus
     joined_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_user_fields(cls, data):
+        """Pull display_name and phone from the related User object."""
+        try:
+            from sqlalchemy import inspect as sa_inspect
+            insp = sa_inspect(data)
+            if "user" in insp.dict and data.user is not None:
+                if not getattr(data, "display_name", None):
+                    data.display_name = data.user.display_name
+                if not getattr(data, "phone", None):
+                    data.phone = data.user.phone
+        except Exception:
+            pass
+        return data
 
 
 class SessionResponse(BaseModel):
@@ -46,6 +62,20 @@ class SessionResponse(BaseModel):
     members: list[SessionMemberResponse] = []
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_table_label(cls, data):
+        """Pull table label from the related Table object."""
+        try:
+            from sqlalchemy import inspect as sa_inspect
+            insp = sa_inspect(data)
+            # Only access 'table' if it's already loaded (not pending lazy load)
+            if "table" in insp.dict and data.table is not None:
+                data.table_label = data.table.label
+        except Exception:
+            pass
+        return data
 
 
 class MemberActionRequest(BaseModel):
