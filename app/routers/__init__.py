@@ -6,6 +6,7 @@ from app.routers.cart import router as cart_router
 from app.routers.menu import router as menu_router
 from app.routers.orders import router as orders_router
 from app.routers.sessions import router as sessions_router
+from app.routers.user import router as user_router
 
 all_routers = [
     auth_router,
@@ -14,4 +15,5 @@ all_routers = [
     orders_router,
     menu_router,
     admin_router,
+    user_router,
 ]

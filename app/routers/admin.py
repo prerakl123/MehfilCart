@@ -173,8 +173,11 @@ async def get_table_qr(
     from app.core.config import settings
 
     # Use provided base_url or fallback to app settings
-    url = generate_table_qr_url(str(restaurant_id), str(
-        table_id), base_url=base_url or settings.APP_BASE_URL)
+    url = generate_table_qr_url(
+        restaurant_id=str(restaurant_id),
+        table_id=str(table_id),
+        base_url=base_url or settings.APP_BASE_URL
+    )
     img_bytes = generate_qr_image(url)
     return Response(content=img_bytes, media_type="image/png")
 
@@ -327,3 +330,37 @@ async def list_admin_sessions(
     db: AsyncSession = Depends(get_db),
 ):
     return await admin_service.list_sessions(db, restaurant_id)
+
+
+# -- Name Change Requests --
+
+@router.get(
+    "/name-requests/{restaurant_id}",
+    summary="List Name Change Requests",
+    description="List all pending staff name change requests for a restaurant.",
+    dependencies=[_admin_dep],
+)
+async def list_name_requests(
+    restaurant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import user_service
+    return await user_service.list_name_change_requests(db, restaurant_id)
+
+
+@router.patch(
+    "/name-requests/{request_id}",
+    summary="Handle Name Change Request",
+    description="Approve or reject a staff name change request.",
+    dependencies=[_admin_dep],
+)
+async def handle_name_request(
+    request_id: UUID,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services import user_service
+    action = body.get("action", "")
+    return await user_service.handle_name_change_request(db, request_id, action)

@@ -8,6 +8,7 @@ from app import settings
 
 def generate_table_qr_url(restaurant_id: str, table_id: str, base_url: str = settings.APP_BASE_URL) -> str:
     """Generate the URL that a table's QR code should encode."""
+    print(f"QR URL: {base_url}/join/{restaurant_id}/{table_id}")
     return f"{base_url}/join/{restaurant_id}/{table_id}"
 
 

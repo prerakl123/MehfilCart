@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     IDLE_TIMEOUT_MINUTES: int = 15
 
     # -- CORS --
-    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ALLOWED_ORIGINS: list[str] = ["*"]
 
     # -- Super Admin Seed --
     # Seeded on first startup if no super admin exists
