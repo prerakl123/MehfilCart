@@ -52,6 +52,10 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     canceller = relationship("User", foreign_keys=[cancelled_by])
     items = relationship("OrderItem", back_populates="order", lazy="selectin")
 
+    @property
+    def submitter_name(self) -> str | None:
+        return self.submitter.display_name if self.submitter else None
+
     def __repr__(self):
         return f"<Order {self.id} status={self.status} total={self.total_amount}>"
 
@@ -79,6 +83,18 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     order = relationship("Order", back_populates="items")
     menu_item = relationship("MenuItem")
     adder = relationship("User", foreign_keys=[added_by])
+
+    @property
+    def added_by_id(self):
+        return self.added_by
+
+    @property
+    def added_by_name(self) -> str | None:
+        return self.adder.display_name if self.adder else None
+
+    @property
+    def menu_item_name(self) -> str:
+        return self.menu_item.name if self.menu_item else "Unknown"
 
     def __repr__(self):
         return f"<OrderItem menu_item={self.menu_item_id} qty={self.quantity}>"
