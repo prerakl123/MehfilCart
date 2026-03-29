@@ -7,6 +7,8 @@ from app.routers.menu import router as menu_router
 from app.routers.orders import router as orders_router
 from app.routers.sessions import router as sessions_router
 from app.routers.user import router as user_router
+from app.routers.private import router as private_router
+
 
 all_routers = [
     auth_router,
@@ -16,4 +18,5 @@ all_routers = [
     menu_router,
     admin_router,
     user_router,
+    private_router,
 ]
