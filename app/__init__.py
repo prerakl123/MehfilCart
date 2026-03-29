@@ -5,6 +5,7 @@ Registers: CORS middleware, global exception handlers, all API routers.
 Auto-creates database tables and seeds the super admin on startup.
 """
 
+from fastapi import Response
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -170,6 +171,25 @@ for router in all_routers:
 
 
 # -- Health Check --
+@app.head("/", tags=["System"])
+async def health_check_root_head():
+    """Health check endpoint."""
+    return Response(status_code=200)
+
+
+@app.get("/", tags=["System"])
+async def health_check_root():
+    """Health check endpoint."""
+    return {"status": "healthy", "version": app.version}
+
+
+@app.head("/health", tags=["System"])
+async def health_check_head():
+    """Health check endpoint for load balancers."""
+    return Response(status_code=200)
+
+
 @app.get("/health", tags=["System"])
 async def health_check():
+    """Health check endpoint for load balancers."""
     return {"status": "healthy", "version": app.version}
