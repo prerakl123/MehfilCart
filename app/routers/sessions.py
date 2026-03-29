@@ -14,8 +14,16 @@ from app.schemas.session import (
     SessionResponse, SessionUpdate, TransferHostRequest,
 )
 from app.services import session_service
+from app.websocket.manager import ws_manager
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
+
+async def _broadcast_session_update(session_id: UUID, db: AsyncSession):
+    """Refetch the session and immediately push the updated state down the WebSocket."""
+    # Run in a separate scope to prevent transaction collisions? No, just run it before return.
+    session = await session_service.get_session(db, session_id)
+    payload = SessionResponse.model_validate(session).model_dump()
+    await ws_manager.broadcast_to_room(f"session:{session_id}", "session:updated", payload)
 
 
 @router.post(
@@ -102,6 +110,8 @@ async def update_session(
         )
     if body.status is not None:
         session = await session_service.update_session_status(db, session_id, body.status)
+        
+    await _broadcast_session_update(session_id, db)
     return session
 
 
@@ -117,6 +127,7 @@ async def join_session(
     db: AsyncSession = Depends(get_db),
 ):
     await session_service.request_join(db, session_id, current_user)
+    await _broadcast_session_update(session_id, db)
     return MessageResponse(message="Join request sent. Waiting for host approval.")
 
 
@@ -136,6 +147,7 @@ async def handle_member(
     await session_service.handle_member_action(
         db, session_id, member_id, body.action, current_user,
     )
+    await _broadcast_session_update(session_id, db)
     return MessageResponse(message=f"Member {body.action}d successfully.")
 
 
@@ -167,6 +179,7 @@ async def leave_session(
     db: AsyncSession = Depends(get_db),
 ):
     await session_service.leave_session(db, session_id, current_user)
+    await _broadcast_session_update(session_id, db)
     return MessageResponse(message="Successfully left the session.")
 
 
@@ -182,7 +195,9 @@ async def transfer_host(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await session_service.transfer_host(db, session_id, body.new_host_id, current_user)
+    session = await session_service.transfer_host(db, session_id, body.new_host_id, current_user)
+    await _broadcast_session_update(session_id, db)
+    return session
 
 
 @router.delete(
@@ -198,4 +213,5 @@ async def close_session(
 ):
     from app.models.session import SessionStatus
     await session_service.update_session_status(db, session_id, SessionStatus.CLOSED)
+    await _broadcast_session_update(session_id, db)
     return MessageResponse(message="Session closed.")

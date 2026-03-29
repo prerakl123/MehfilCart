@@ -157,7 +157,7 @@ for router in all_routers:
 # -- WebSocket Endpoint --
 from app.websocket.handlers import websocket_endpoint  # noqa: E402
 
-app.add_api_websocket_route("/ws", websocket_endpoint)
+app.add_api_websocket_route(f"{API_PREFIX}/ws", websocket_endpoint)
 
 
 for router in all_routers:

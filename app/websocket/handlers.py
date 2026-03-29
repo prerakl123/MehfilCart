@@ -19,13 +19,16 @@ async def websocket_endpoint(websocket: WebSocket):
     # Authenticate: expect token in query string ?token=...
     token = websocket.query_params.get("token")
     if not token:
+        await websocket.accept()
         await websocket.close(code=4001, reason="Authentication required")
         return
 
     try:
         payload = verify_access_token(token)
         user_id = payload["sub"]
-    except (UnauthorizedException, Exception):
+    except (UnauthorizedException, Exception) as e:
+        print(f"WS Auth Error: {e}")
+        await websocket.accept()
         await websocket.close(code=4001, reason="Invalid token")
         return
 

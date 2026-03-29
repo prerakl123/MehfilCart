@@ -52,7 +52,7 @@ class ConnectionManager:
 
     async def broadcast_to_room(self, room: str, event: str, payload: dict) -> None:
         """Send an event to all users in a room."""
-        message = json.dumps({"event": event, "data": payload})
+        message = json.dumps({"event": event, "data": payload}, default=str)
         user_ids = self._rooms.get(room, set())
         for uid in list(user_ids):
             ws = self._connections.get(uid)
@@ -67,7 +67,7 @@ class ConnectionManager:
         """Send an event directly to a specific user."""
         ws = self._connections.get(user_id)
         if ws:
-            message = json.dumps({"event": event, "data": payload})
+            message = json.dumps({"event": event, "data": payload}, default=str)
             try:
                 await ws.send_text(message)
             except Exception:
