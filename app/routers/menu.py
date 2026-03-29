@@ -32,7 +32,7 @@ async def get_menu(
     db: AsyncSession = Depends(get_db),
 ):
     categories = await menu_service.get_categories(db, restaurant_id)
-    items = await menu_service.get_menu_items(db, restaurant_id)
+    items = await menu_service.get_menu_items(db, restaurant_id, available_only=False)
     return MenuResponse(
         restaurant_id=restaurant_id,
         categories=categories,

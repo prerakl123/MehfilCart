@@ -47,7 +47,8 @@ async def create_session(db: AsyncSession, user: User, table_id: UUID) -> Sessio
         select(Session).where(
             Session.table_id == table_id,
             Session.status.in_(
-                [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED]),
+                [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED,
+                 SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS]),
         )
     )
     existing = result.scalars().first()
@@ -109,7 +110,8 @@ async def get_active_session_for_table(db: AsyncSession, table_id: UUID) -> Sess
         select(Session).options(*_session_load_options()).where(
             Session.table_id == table_id,
             Session.status.in_(
-                [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED])
+                [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED,
+                 SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS])
         ).order_by(Session.started_at.desc())
     )
     return result.scalars().first()
@@ -124,7 +126,8 @@ async def get_my_active_session(db: AsyncSession, user: User) -> Session | None:
         .where(
             SessionMember.user_id == user.id,
             SessionMember.status == MemberStatus.APPROVED,
-            Session.status.in_([SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED])
+            Session.status.in_([SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED,
+                                SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS])
         ).order_by(Session.started_at.desc())
     )
     return result.scalars().first()
@@ -316,6 +319,6 @@ def _check_session_active(session: Session) -> None:
         raise SessionExpiredException()
     if session.status == SessionStatus.LOCKED:
         raise SessionLockedException()
-    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE):
+    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS):
         raise BadRequestException(
             f"Session is {session.status.value} and cannot be modified.")

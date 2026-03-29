@@ -140,7 +140,7 @@ async def clear_cart(redis: aioredis.Redis, session_id: UUID) -> None:
 
 def _check_cart_modifiable(session: Session, user: User) -> None:
     """Ensure the session allows cart modifications for this user."""
-    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE):
+    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS):
         raise BadRequestException(
             f"Cart is not modifiable in {session.status.value} state.")
 

@@ -15,6 +15,8 @@ from app.schemas.order import (
     OrderCancelRequest, OrderResponse, OrderStatusUpdate, OrderSubmit,
 )
 from app.services import order_service, session_service
+from app.websocket.manager import ws_manager
+from app.schemas.cart import CartResponse
 
 router = APIRouter(tags=["Orders"])
 
@@ -34,9 +36,17 @@ async def submit_order(
     redis: aioredis.Redis = Depends(get_redis),
 ):
     session = await session_service.get_session(db, session_id)
-    return await order_service.submit_order(
+    order = await order_service.submit_order(
         db, redis, session, current_user, body.special_notes,
     )
+
+    # Broadcast empty cart to all session members so their UIs clear
+    empty_cart = CartResponse(session_id=session_id, items=[], total=0, item_count=0)
+    await ws_manager.broadcast_to_room(
+        f"session:{session_id}", "cart:updated", empty_cart.model_dump()
+    )
+
+    return order
 
 
 @router.get(

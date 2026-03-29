@@ -42,7 +42,7 @@ async def submit_order(
     if str(session.host_user_id) != str(user.id):
         raise ForbiddenException("Only the session host can submit orders.")
 
-    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE):
+    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS):
         raise BadRequestException(
             f"Cannot submit order in {session.status.value} state.")
 
