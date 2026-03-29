@@ -86,3 +86,8 @@ class MemberActionRequest(BaseModel):
 class SessionReopenRequest(BaseModel):
     """Admin request to reopen a timed-out session with optional new timeout."""
     new_timeout_minutes: int | None = None
+
+
+class TransferHostRequest(BaseModel):
+    """Host request to transfer hosting duty to another member."""
+    new_host_id: UUID

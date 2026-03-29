@@ -269,8 +269,14 @@ async def remove_staff(db: AsyncSession, role_id: UUID) -> None:
 
 async def list_staff(db: AsyncSession, restaurant_id: UUID) -> list[UserRole]:
     """List all staff members for a restaurant."""
+    from app.core.permissions import Role
     result = await db.execute(
-        select(UserRole).where(UserRole.restaurant_id == restaurant_id)
+        select(UserRole)
+        .options(selectinload(UserRole.user))
+        .where(
+            UserRole.restaurant_id == restaurant_id,
+            UserRole.role.in_([Role.SUPER_ADMIN, Role.RESTAURANT_ADMIN, Role.WAITER])
+        )
     )
     return list(result.scalars().all())
 

@@ -11,7 +11,7 @@ from app.models.user import User
 from app.schemas.auth import MessageResponse
 from app.schemas.session import (
     MemberActionRequest, SessionCreate, SessionReopenRequest,
-    SessionResponse, SessionUpdate,
+    SessionResponse, SessionUpdate, TransferHostRequest,
 )
 from app.services import session_service
 
@@ -63,6 +63,23 @@ async def get_active_session_for_table(
     if not session:
         from app.core.exceptions import NotFoundException
         raise NotFoundException("No active session found for this table.")
+    return session
+
+
+@router.get(
+    "/my/active",
+    response_model=SessionResponse,
+    summary="Get My Active Session",
+    description="Retrieve the active session for the current authenticated user, if any.",
+)
+async def get_my_active_session(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    session = await session_service.get_my_active_session(db, current_user)
+    if not session:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("You do not have an active session.")
     return session
 
 
@@ -136,6 +153,36 @@ async def reopen_session(
     db: AsyncSession = Depends(get_db),
 ):
     return await session_service.reopen_session(db, session_id, body.new_timeout_minutes)
+
+
+@router.post(
+    "/{session_id}/leave",
+    response_model=MessageResponse,
+    summary="Leave Session",
+    description="Leave an active session. If you are the host, this ends the session for all.",
+)
+async def leave_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await session_service.leave_session(db, session_id, current_user)
+    return MessageResponse(message="Successfully left the session.")
+
+
+@router.post(
+    "/{session_id}/transfer-host",
+    response_model=SessionResponse,
+    summary="Transfer Host",
+    description="Transfer the hosting duty to another member.",
+)
+async def transfer_host(
+    session_id: UUID,
+    body: TransferHostRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await session_service.transfer_host(db, session_id, body.new_host_id, current_user)
 
 
 @router.delete(

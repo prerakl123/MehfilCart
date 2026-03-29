@@ -50,7 +50,7 @@ async def create_session(db: AsyncSession, user: User, table_id: UUID) -> Sessio
                 [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED]),
         )
     )
-    existing = result.scalar_one_or_none()
+    existing = result.scalars().first()
     if existing:
         raise ConflictException(
             "An active session already exists at this table.")
@@ -110,9 +110,24 @@ async def get_active_session_for_table(db: AsyncSession, table_id: UUID) -> Sess
             Session.table_id == table_id,
             Session.status.in_(
                 [SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED])
-        )
+        ).order_by(Session.started_at.desc())
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
+
+
+async def get_my_active_session(db: AsyncSession, user: User) -> Session | None:
+    """Fetch the currently active session for a specific user, if any."""
+    result = await db.execute(
+        select(Session)
+        .join(SessionMember, Session.id == SessionMember.session_id)
+        .options(*_session_load_options())
+        .where(
+            SessionMember.user_id == user.id,
+            SessionMember.status == MemberStatus.APPROVED,
+            Session.status.in_([SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.LOCKED])
+        ).order_by(Session.started_at.desc())
+    )
+    return result.scalars().first()
 
 
 async def request_join(db: AsyncSession, session_id: UUID, user: User) -> SessionMember:
@@ -241,6 +256,56 @@ async def reopen_session(
     session.status = SessionStatus.ACTIVE
     session.expires_at = now + timedelta(minutes=timeout)
     session.closed_at = None
+    await db.flush()
+    return session
+
+
+async def leave_session(db: AsyncSession, session_id: UUID, user: User) -> None:
+    """Leave the session. If the user is the host, close the session for everyone."""
+    session = await get_session(db, session_id)
+    if session.status in (SessionStatus.COMPLETED, SessionStatus.CLOSED, SessionStatus.TIMED_OUT):
+        raise BadRequestException("The session is already closed or inactive.")
+    
+    if session.host_user_id == user.id:
+        # Host leaves: session ends for all
+        session.status = SessionStatus.CLOSED
+        session.closed_at = datetime.now(timezone.utc)
+        await db.flush()
+        return
+
+    # Guest leaves
+    member = next((m for m in session.members if m.user_id == user.id and m.status in (MemberStatus.APPROVED, MemberStatus.PENDING)), None)
+    if not member:
+        raise NotFoundException("You are not an active member of this session.")
+
+    member.status = MemberStatus.LEFT
+    await db.flush()
+
+
+async def transfer_host(db: AsyncSession, session_id: UUID, new_host_id: UUID, host_user: User) -> Session:
+    """Transfer the hosting duty to another member."""
+    session = await get_session(db, session_id)
+    _check_session_active(session)
+
+    if session.host_user_id != host_user.id:
+        raise ForbiddenException("Only the session host can transfer hosting duty.")
+
+    new_host_member = next((m for m in session.members if m.user_id == new_host_id and m.status == MemberStatus.APPROVED), None)
+    if not new_host_member:
+        raise BadRequestException("The new host must be an approved member of the session.")
+
+    # Prevent transferring to self
+    if new_host_id == host_user.id:
+        raise BadRequestException("You are already the host.")
+
+    current_host_member = next((m for m in session.members if m.user_id == host_user.id and m.status == MemberStatus.APPROVED), None)
+
+    # Transfer host
+    session.host_user_id = new_host_id
+    new_host_member.role = MemberRole.HOST
+    if current_host_member:
+        current_host_member.role = MemberRole.GUEST
+
     await db.flush()
     return session
 
