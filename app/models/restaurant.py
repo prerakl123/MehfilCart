@@ -33,6 +33,7 @@ class Restaurant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "UserRole", back_populates="restaurant", lazy="selectin")
 
     def __repr__(self):
+        """Return a human-readable representation of the Restaurant instance."""
         return f"<Restaurant {self.name}>"
 
 
@@ -53,4 +54,5 @@ class UserRole(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     restaurant = relationship("Restaurant", back_populates="user_roles")
 
     def __repr__(self):
+        """Return a human-readable representation of the UserRole instance."""
         return f"<UserRole {self.role} user={self.user_id} restaurant={self.restaurant_id}>"

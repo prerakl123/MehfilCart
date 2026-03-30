@@ -41,6 +41,12 @@ async def list_restaurants(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all registered restaurants on the platform, excluding the sentinel entry.
+    Restricted to Super Admin.
+
+    :returns: List of RestaurantResponse objects ordered by name.
+    """
     return await admin_service.list_restaurants(db)
 
 
@@ -56,6 +62,13 @@ async def get_restaurant(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Retrieve the full details of a single restaurant by its ID.
+
+    :param restaurant_id: UUID of the restaurant to look up.
+    :returns: RestaurantResponse.
+    :raises NotFoundException: If no restaurant with the given ID exists.
+    """
     return await admin_service.get_restaurant(db, restaurant_id)
 
 
@@ -72,6 +85,13 @@ async def create_restaurant(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Register a new restaurant on the platform. Restricted to Super Admin.
+
+    :param body: Restaurant creation payload with name, slug, and optional contact details.
+    :returns: The newly created RestaurantResponse.
+    :raises ConflictException: If a restaurant with the same slug already exists.
+    """
     return await admin_service.create_restaurant(db, body)
 
 
@@ -88,6 +108,14 @@ async def update_restaurant(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Update properties of an existing restaurant. Restricted to Super Admin.
+
+    :param restaurant_id: UUID of the restaurant to update.
+    :param body: Fields to update; only provided fields are applied.
+    :returns: Updated RestaurantResponse.
+    :raises ConflictException: If the new slug is already taken by another restaurant.
+    """
     return await admin_service.update_restaurant(db, restaurant_id, body)
 
 
@@ -103,6 +131,13 @@ async def delete_restaurant(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Permanently delete a restaurant and its associated data. Restricted to Super Admin.
+
+    :param restaurant_id: UUID of the restaurant to delete.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no restaurant with the given ID exists.
+    """
     await admin_service.delete_restaurant(db, restaurant_id)
     return MessageResponse(message="Restaurant deleted successfully.")
 
@@ -119,6 +154,12 @@ async def get_dashboard(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Return overview statistics for a restaurant dashboard: active sessions, orders, and revenue.
+
+    :param restaurant_id: UUID of the restaurant whose stats to compute.
+    :returns: DashboardStats with today's order count, revenue, and table/staff counts.
+    """
     return await admin_service.get_dashboard_stats(db, restaurant_id)
 
 
@@ -136,6 +177,12 @@ async def list_tables(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all tables belonging to a restaurant, ordered by label.
+
+    :param restaurant_id: UUID of the restaurant.
+    :returns: List of TableResponse objects.
+    """
     return await admin_service.list_tables(db, restaurant_id)
 
 
@@ -153,6 +200,13 @@ async def create_table(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Create a new dining table for a restaurant and auto-generate its QR code URL.
+
+    :param restaurant_id: UUID of the restaurant that will own the table.
+    :param body: Table creation payload with label and capacity.
+    :returns: The newly created TableResponse including the QR code URL.
+    """
     return await admin_service.create_table(db, restaurant_id, body)
 
 
@@ -169,6 +223,15 @@ async def get_table_qr(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Generate and return the QR code PNG image for a specific table.
+    The QR encodes the join URL that guests scan to start a session.
+
+    :param restaurant_id: UUID of the restaurant that owns the table.
+    :param table_id: UUID of the table to generate the QR code for.
+    :param base_url: Optional override for the base URL; falls back to APP_BASE_URL.
+    :returns: PNG image bytes with ``image/png`` media type.
+    """
     from app.utils.qr import generate_table_qr_url, generate_qr_image
     from app.core.config import settings
 
@@ -196,6 +259,15 @@ async def update_table(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Update a table's label, seating capacity, or active status.
+
+    :param restaurant_id: UUID of the restaurant (used for route scoping).
+    :param table_id: UUID of the table to update.
+    :param body: Fields to update; only provided fields are applied.
+    :returns: Updated TableResponse.
+    :raises NotFoundException: If no table with the given ID exists.
+    """
     return await admin_service.update_table(db, table_id, body)
 
 
@@ -212,6 +284,14 @@ async def delete_table(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Permanently delete a table record from the restaurant.
+
+    :param restaurant_id: UUID of the restaurant (used for route scoping).
+    :param table_id: UUID of the table to delete.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no table with the given ID exists.
+    """
     await admin_service.delete_table(db, table_id)
     return MessageResponse(message="Table deleted successfully.")
 
@@ -230,6 +310,12 @@ async def list_staff(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all staff members (admins and waiters) assigned to a restaurant.
+
+    :param restaurant_id: UUID of the restaurant to query.
+    :returns: List of StaffResponse objects with user and role details.
+    """
     roles = await admin_service.list_staff(db, restaurant_id)
     # Map to response schema
     result = []
@@ -259,6 +345,15 @@ async def add_staff(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Add a staff member to a restaurant. Creates a new User record if the phone is not registered.
+
+    :param restaurant_id: UUID of the restaurant to assign the staff member to.
+    :param body: Payload with phone, role, and optional display name.
+    :returns: Confirmation message.
+    :raises BadRequestException: If the phone number format is invalid.
+    :raises ConflictException: If the user is already assigned to this restaurant.
+    """
     await admin_service.add_staff(db, restaurant_id, body)
     return MessageResponse(message="Staff member added successfully.")
 
@@ -275,6 +370,13 @@ async def remove_staff(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Remove a staff member's role assignment from the restaurant.
+
+    :param role_id: UUID of the UserRole record to delete.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no role assignment with the given ID exists.
+    """
     await admin_service.remove_staff(db, role_id)
     return MessageResponse(message="Staff member removed.")
 
@@ -294,6 +396,14 @@ async def update_config(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Update the restaurant's operational configuration (session timeouts, guest limits, etc.).
+
+    :param restaurant_id: UUID of the restaurant to configure.
+    :param body: Configuration fields to update; only provided fields are merged in.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no restaurant with the given ID exists.
+    """
     await admin_service.update_config(
         db, restaurant_id, body.model_dump(exclude_unset=True),
     )
@@ -314,6 +424,12 @@ async def list_admin_orders(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all orders placed at a restaurant's tables within the last 24 hours.
+
+    :param restaurant_id: UUID of the restaurant to query.
+    :returns: List of OrderResponse objects ordered by submission time descending.
+    """
     return await admin_service.list_orders(db, restaurant_id)
 
 
@@ -329,6 +445,12 @@ async def list_admin_sessions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all active and recent (last 12 hours) sessions for a restaurant.
+
+    :param restaurant_id: UUID of the restaurant to query.
+    :returns: List of SessionResponse objects ordered by creation time descending.
+    """
     return await admin_service.list_sessions(db, restaurant_id)
 
 
@@ -345,6 +467,12 @@ async def list_name_requests(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List all pending staff display name change requests for a restaurant.
+
+    :param restaurant_id: UUID of the restaurant to query.
+    :returns: List of pending NameChangeRequest dicts with user and request details.
+    """
     from app.services import user_service
     return await user_service.list_name_change_requests(db, restaurant_id)
 
@@ -361,6 +489,16 @@ async def handle_name_request(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Approve or reject a pending staff name change request.
+    Approval immediately updates the staff member's display name.
+
+    :param request_id: UUID of the NameChangeRequest to process.
+    :param body: Dict with an ``"action"`` key set to ``"approve"`` or ``"reject"``.
+    :returns: Updated request dict reflecting the new status.
+    :raises NotFoundException: If no request with the given ID exists.
+    :raises BadRequestException: If the request has already been processed or action is invalid.
+    """
     from app.services import user_service
     action = body.get("action", "")
     return await user_service.handle_name_change_request(db, request_id, action)

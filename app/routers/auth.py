@@ -28,6 +28,15 @@ async def request_otp(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    Send a 6-digit OTP to the given phone number.
+    Enforces rate-limiting and normalizes the number before dispatch.
+
+    :param body: Request body containing the target phone number.
+    :returns: Confirmation message with the masked phone number.
+    :raises BadRequestException: If the phone number format is invalid.
+    :raises RateLimitException: If too many OTP requests have been made recently.
+    """
     message = await auth_service.request_otp(db, redis, body.phone)
     return MessageResponse(message=message)
 
@@ -44,6 +53,15 @@ async def verify_otp(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    Verify the OTP for a phone number and issue JWT access and refresh tokens.
+    The refresh token is returned as an HttpOnly cookie.
+
+    :param body: Request body with phone and OTP.
+    :param response: FastAPI response object used to set the refresh token cookie.
+    :returns: Access token, user info, and assigned role.
+    :raises BadRequestException: If the OTP is invalid or expired.
+    """
     token_response, refresh_token = await auth_service.verify_otp_and_authenticate(
         db, redis, body.phone, body.otp
     )
@@ -69,6 +87,13 @@ async def refresh_token(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    Exchange a valid refresh token cookie for a new short-lived access token.
+
+    :param request: Incoming request whose cookies are inspected for the refresh token.
+    :returns: New access token and updated user information.
+    :raises UnauthorizedException: If the refresh token cookie is absent or invalid.
+    """
     refresh = request.cookies.get("refresh_token")
     if not refresh:
         raise UnauthorizedException("Refresh token required.")
@@ -89,5 +114,11 @@ async def logout(
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    Invalidate the current user's refresh token, effectively ending their session.
+
+    :param current_user: The authenticated user derived from the access token.
+    :returns: Confirmation message.
+    """
     await auth_service.logout_user(redis, str(current_user.id))
     return MessageResponse(message="Logged out successfully.")

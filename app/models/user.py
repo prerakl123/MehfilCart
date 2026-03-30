@@ -10,6 +10,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Represents every person that interacts with the platform — guests, staff, and admins alike."""
     __tablename__ = "users"
 
     phone: Mapped[str] = mapped_column(
@@ -28,4 +29,5 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "SessionMember", back_populates="user", lazy="selectin")
 
     def __repr__(self):
+        """Return a human-readable representation of the User instance."""
         return f"<User {self.phone} ({self.display_name})>"

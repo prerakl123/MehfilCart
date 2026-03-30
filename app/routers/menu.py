@@ -31,6 +31,13 @@ async def get_menu(
     restaurant_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Retrieve the full public menu (categories and items) for a given restaurant.
+    Available to all users without authentication.
+
+    :param restaurant_id: UUID of the target restaurant.
+    :returns: MenuResponse grouping all active categories and their menu items.
+    """
     categories = await menu_service.get_categories(db, restaurant_id)
     items = await menu_service.get_menu_items(db, restaurant_id, available_only=False)
     return MenuResponse(
@@ -50,6 +57,12 @@ async def get_categories(
     restaurant_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Retrieve all active menu categories for a restaurant, ordered by display_order.
+
+    :param restaurant_id: UUID of the target restaurant.
+    :returns: List of CategoryResponse objects.
+    """
     return await menu_service.get_categories(db, restaurant_id)
 
 
@@ -66,6 +79,12 @@ async def get_menu_admin(
     restaurant_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Retrieve the full menu including items marked unavailable. Restricted to admins.
+
+    :param restaurant_id: UUID of the target restaurant.
+    :returns: MenuResponse with all categories and all items regardless of availability.
+    """
     categories = await menu_service.get_categories(db, restaurant_id)
     # Fetch all items, not just available ones
     query = (
@@ -98,6 +117,13 @@ async def create_category(
     _: None = Depends(require_permission("menu:manage")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Create a new menu category for a restaurant. Requires the ``menu:manage`` permission.
+
+    :param restaurant_id: UUID of the restaurant that owns the category.
+    :param body: Category creation payload with name, display order, and optional icon.
+    :returns: The newly created CategoryResponse.
+    """
     return await menu_service.create_category(db, restaurant_id, body)
 
 
@@ -114,6 +140,14 @@ async def update_category(
     _: None = Depends(require_permission("menu:manage")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Partially update a menu category's name, display order, icon, or active status.
+
+    :param category_id: UUID of the category to update.
+    :param body: Fields to update; only provided fields are applied.
+    :returns: Updated CategoryResponse.
+    :raises NotFoundException: If no category with the given ID exists.
+    """
     return await menu_service.update_category(db, category_id, body)
 
 
@@ -131,6 +165,14 @@ async def create_menu_item(
     _: None = Depends(require_permission("menu:manage")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Create a new menu item under an existing category. Requires ``menu:manage`` permission.
+
+    :param restaurant_id: UUID of the restaurant; used to verify the category ownership.
+    :param body: Item creation payload including name, price, diet type, and category.
+    :returns: The newly created MenuItemResponse.
+    :raises BadRequestException: If the specified category does not belong to the restaurant.
+    """
     return await menu_service.create_menu_item(db, restaurant_id, body)
 
 
@@ -147,6 +189,14 @@ async def update_menu_item(
     _: None = Depends(require_permission("menu:manage")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Partially update a menu item's properties such as price, availability, or description.
+
+    :param item_id: UUID of the menu item to update.
+    :param body: Fields to update; only provided fields are applied.
+    :returns: Updated MenuItemResponse.
+    :raises NotFoundException: If no item with the given ID exists.
+    """
     return await menu_service.update_menu_item(db, item_id, body)
 
 
@@ -162,5 +212,12 @@ async def delete_menu_item(
     _: None = Depends(require_permission("menu:manage")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Soft-delete a menu item by marking it as unavailable rather than removing the record.
+
+    :param item_id: UUID of the menu item to deactivate.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no item with the given ID exists.
+    """
     await menu_service.delete_menu_item(db, item_id)
     return MessageResponse(message="Menu item deleted.")

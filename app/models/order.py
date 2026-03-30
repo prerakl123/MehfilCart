@@ -13,6 +13,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class OrderStatus(str, enum.Enum):
+    """Processing lifecycle states for a submitted order."""
     RECEIVED = "RECEIVED"
     PREPARING = "PREPARING"
     READY = "READY"
@@ -54,9 +55,11 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     @property
     def submitter_name(self) -> str | None:
+        """Display name of the user who submitted the order, if available."""
         return self.submitter.display_name if self.submitter else None
 
     def __repr__(self):
+        """Return a human-readable representation of the Order instance."""
         return f"<Order {self.id} status={self.status} total={self.total_amount}>"
 
 
@@ -86,15 +89,19 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     @property
     def added_by_id(self):
+        """UUID of the user who added this item to the cart."""
         return self.added_by
 
     @property
     def added_by_name(self) -> str | None:
+        """Display name of the user who added this item, if available."""
         return self.adder.display_name if self.adder else None
 
     @property
     def menu_item_name(self) -> str:
+        """Name of the menu item, falling back to 'Unknown' if the relation is missing."""
         return self.menu_item.name if self.menu_item else "Unknown"
 
     def __repr__(self):
+        """Return a human-readable representation of the OrderItem instance."""
         return f"<OrderItem menu_item={self.menu_item_id} qty={self.quantity}>"

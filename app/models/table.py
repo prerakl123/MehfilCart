@@ -10,6 +10,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class Table(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A physical dining table within a restaurant, identified by a short label."""
     __tablename__ = "tables"
 
     restaurant_id: Mapped[uuid.UUID] = mapped_column(
@@ -27,4 +28,5 @@ class Table(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     sessions = relationship("Session", back_populates="table", lazy="selectin")
 
     def __repr__(self):
+        """Return a human-readable representation of the Table instance."""
         return f"<Table {self.label} restaurant={self.restaurant_id}>"

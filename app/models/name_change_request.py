@@ -11,6 +11,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class NameChangeStatus(str, enum.Enum):
+    """Review state of a staff display name change request."""
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"

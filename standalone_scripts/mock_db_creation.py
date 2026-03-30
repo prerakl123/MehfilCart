@@ -177,10 +177,17 @@ MENU_ITEMS = [
 # ---------------------------------------------------------------------------
 
 def utcnow() -> datetime:
+    """Return the current UTC-aware datetime."""
     return datetime.now(timezone.utc)
 
 
 def ago(**kwargs) -> datetime:
+    """
+    Return a past UTC datetime offset by the given timedelta keyword arguments.
+
+    :param kwargs: Keyword arguments forwarded to ``timedelta`` (e.g., ``minutes=30``).
+    :returns: A timezone-aware datetime in the past.
+    """
     return utcnow() - timedelta(**kwargs)
 
 
@@ -357,6 +364,7 @@ async def seed(db: AsyncSession) -> None:
     all_items: dict[str, MenuItem] = {}
 
     async def get_item(name: str) -> MenuItem | None:
+        """Look up a seeded MenuItem by name from the in-memory cache."""
         return all_items.get(name)
 
     # Retrieve seeded item references -- they are already flushed, gather via identity map
@@ -366,6 +374,16 @@ async def seed(db: AsyncSession) -> None:
         all_items[mi.name] = mi
 
     def build_order(session: Session, submitter: User, items_with_qty: list, status: OrderStatus, minutes_ago: int) -> tuple[Order, list[OrderItem]]:
+        """
+        Construct an Order and its OrderItems from a list of (name, quantity) pairs.
+
+        :param session: The Session the order belongs to.
+        :param submitter: The User submitting the order.
+        :param items_with_qty: List of ``(item_name, quantity)`` tuples.
+        :param status: Initial OrderStatus for the order.
+        :param minutes_ago: How many minutes in the past the order was submitted.
+        :returns: Tuple of the Order instance and a list of OrderItem instances.
+        """
         submitted = ago(minutes=minutes_ago)
         total = sum(all_items[n].price * q for n, q in items_with_qty if n in all_items)
         order = Order(
@@ -440,6 +458,10 @@ async def seed(db: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 
 async def main() -> None:
+    """
+    Entrypoint: initialise the async engine from DATABASE_URL and run the seeder.
+    Commits all data in a single transaction and disposes the engine on completion.
+    """
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         print("ERROR: DATABASE_URL not set in .env")

@@ -12,6 +12,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class DietType(str, enum.Enum):
+    """Dietary classification for a menu item."""
     VEG = "VEG"
     NON_VEG = "NON_VEG"
     VEGAN = "VEGAN"
@@ -38,6 +39,7 @@ class Category(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "MenuItem", back_populates="category", lazy="selectin")
 
     def __repr__(self):
+        """Return a human-readable representation of the Category instance."""
         return f"<Category {self.name}>"
 
 
@@ -68,4 +70,5 @@ class MenuItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     category = relationship("Category", back_populates="items")
 
     def __repr__(self):
+        """Return a human-readable representation of the MenuItem instance."""
         return f"<MenuItem {self.name} price={self.price}>"

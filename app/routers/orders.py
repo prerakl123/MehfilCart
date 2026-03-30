@@ -35,6 +35,16 @@ async def submit_order(
     db: AsyncSession = Depends(get_db),
     redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    Convert the session's Redis cart into a persisted Order. Host-only operation.
+    Broadcasts the cleared cart and the new order to all relevant WebSocket rooms.
+
+    :param session_id: UUID of the session whose cart should be submitted.
+    :param body: Optional special notes to attach to the order.
+    :returns: The fully populated OrderResponse.
+    :raises ForbiddenException: If the current user is not the session host.
+    :raises BadRequestException: If the cart is empty or the session state forbids submission.
+    """
     session = await session_service.get_session(db, session_id)
     order = await order_service.submit_order(
         db, redis, session, current_user, body.special_notes,
@@ -45,6 +55,16 @@ async def submit_order(
     await ws_manager.broadcast_to_room(
         f"session:{session_id}", "cart:updated", empty_cart.model_dump()
     )
+
+    # Broadcast new order to staff, admin, and session members
+    try:
+        order_dict = OrderResponse.model_validate(order).model_dump(mode="json")
+        restaurant_id = order.session.table.restaurant_id
+        await ws_manager.broadcast_to_room(f"admin:{restaurant_id}", "order:created", order_dict)
+        await ws_manager.broadcast_to_room(f"staff:{restaurant_id}", "order:created", order_dict)
+        await ws_manager.broadcast_to_room(f"session:{session_id}", "order:created", order_dict)
+    except Exception as e:
+        print("Error broadcasting order: ", e)
 
     return order
 
@@ -62,6 +82,15 @@ async def list_orders(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    List orders with optional filters for session and status, supporting pagination.
+
+    :param session_id: If provided, restrict results to this session's orders.
+    :param status: If provided, restrict results to orders with this status.
+    :param limit: Maximum number of orders to return (1–100).
+    :param offset: Number of orders to skip for pagination.
+    :returns: Dict with ``orders`` list and ``total`` count.
+    """
     orders, total = await order_service.list_orders(db, session_id, status, limit, offset)
     return {"orders": orders, "total": total}
 
@@ -77,6 +106,13 @@ async def get_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Retrieve the full details of a single order, including all line items.
+
+    :param order_id: UUID of the order to retrieve.
+    :returns: OrderResponse with items, status, and submitter info.
+    :raises NotFoundException: If no order with the given ID exists.
+    """
     return await order_service.get_order(db, order_id)
 
 
@@ -93,7 +129,25 @@ async def update_order_status(
     _: None = Depends(require_permission("order:status-update")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await order_service.update_order_status(db, order_id, body.status)
+    """
+    Transition an order through its lifecycle (e.g., RECEIVED → PREPARING → READY).
+    Broadcasts the update to admin, staff, and session WebSocket rooms.
+
+    :param order_id: UUID of the order to update.
+    :param body: The target status to transition to.
+    :returns: Updated OrderResponse.
+    :raises BadRequestException: If the requested transition is not valid.
+    """
+    order = await order_service.update_order_status(db, order_id, body.status)
+    try:
+        order_dict = OrderResponse.model_validate(order).model_dump(mode="json")
+        restaurant_id = order.session.table.restaurant_id
+        await ws_manager.broadcast_to_room(f"admin:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"staff:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"session:{order.session_id}", "order:updated", order_dict)
+    except Exception as e:
+        pass
+    return order
 
 
 @router.post(
@@ -109,4 +163,22 @@ async def cancel_order(
     _: None = Depends(require_permission("order:cancel")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await order_service.cancel_order(db, order_id, current_user, body.reason)
+    """
+    Cancel an order with a mandatory reason string. Restricted to staff and admins.
+    Broadcasts the cancellation to admin, staff, and session WebSocket rooms.
+
+    :param order_id: UUID of the order to cancel.
+    :param body: Cancellation payload containing the reason (3–500 characters).
+    :returns: Updated OrderResponse with CANCELLED status and reason.
+    :raises BadRequestException: If the order is already completed or cancelled.
+    """
+    order = await order_service.cancel_order(db, order_id, current_user, body.reason)
+    try:
+        order_dict = OrderResponse.model_validate(order).model_dump(mode="json")
+        restaurant_id = order.session.table.restaurant_id
+        await ws_manager.broadcast_to_room(f"admin:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"staff:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"session:{order.session_id}", "order:updated", order_dict)
+    except Exception as e:
+        pass
+    return order

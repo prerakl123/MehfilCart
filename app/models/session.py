@@ -12,6 +12,7 @@ from app.models.base import UUIDPrimaryKeyMixin, TimestampMixin
 
 
 class SessionStatus(str, enum.Enum):
+    """Lifecycle states a collaborative ordering session can be in."""
     CREATED = "CREATED"
     ACTIVE = "ACTIVE"
     LOCKED = "LOCKED"
@@ -23,11 +24,13 @@ class SessionStatus(str, enum.Enum):
 
 
 class MemberRole(str, enum.Enum):
+    """Role a participant holds within a session — either the originating Host or a Guest."""
     HOST = "HOST"
     GUEST = "GUEST"
 
 
 class MemberStatus(str, enum.Enum):
+    """Approval state of a session membership request."""
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -66,6 +69,7 @@ class Session(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     orders = relationship("Order", back_populates="session", lazy="selectin")
 
     def __repr__(self):
+        """Return a human-readable representation of the Session instance."""
         return f"<Session {self.id} status={self.status} table={self.table_id}>"
 
 
@@ -96,4 +100,5 @@ class SessionMember(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     user = relationship("User", back_populates="session_memberships")
 
     def __repr__(self):
+        """Return a human-readable representation of the SessionMember instance."""
         return f"<SessionMember {self.role} user={self.user_id} session={self.session_id}>"

@@ -25,6 +25,7 @@ def _order_load_options():
         selectinload(Order.items).selectinload(OrderItem.menu_item),
         selectinload(Order.items).selectinload(OrderItem.adder),
         selectinload(Order.submitter),
+        selectinload(Order.session).selectinload(Session.table),
     ]
 
 
