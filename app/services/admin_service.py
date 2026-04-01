@@ -15,7 +15,11 @@ from app.models.restaurant import Restaurant, UserRole
 from app.models.session import Session, SessionStatus
 from app.models.table import Table
 from app.models.user import User
-from app.schemas.admin import DashboardStats, TableCreate, TableUpdate, StaffCreate
+from app.schemas.admin import (
+    TableCreate, TableUpdate, StaffCreate,
+    RestaurantDashboardStats, SuperAdminDashboardStats,
+    HourlyMetric, CategoryMetric, ItemMetric, RestaurantPerformanceMetric, DailyPlatformMetric
+)
 from app.schemas.restaurant import RestaurantCreate, RestaurantUpdate
 from app.utils.phone import normalize_phone, is_valid_phone
 from app.utils.qr import generate_table_qr_url
@@ -106,60 +110,313 @@ async def delete_restaurant(db: AsyncSession, restaurant_id: UUID) -> None:
 # -- Dashboard --
 
 
-async def get_dashboard_stats(db: AsyncSession, restaurant_id: UUID) -> DashboardStats:
+async def get_dashboard_stats(db: AsyncSession, restaurant_id: UUID) -> RestaurantDashboardStats:
     """Compute dashboard statistics for a restaurant."""
-    today_start = datetime.combine(
-        date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+    from datetime import timedelta
+    from sqlalchemy.orm import aliased
+    from app.models.menu import MenuItem, Category
+    from app.models.order import OrderItem, OrderStatus
 
-    # Active sessions count
-    active_result = await db.execute(
-        select(func.count(Session.id))
-        .join(Table)
-        .where(
-            Table.restaurant_id == restaurant_id,
-            Session.status.in_([SessionStatus.ACTIVE, SessionStatus.CREATED]),
+    now = datetime.now(timezone.utc)
+    today_start = datetime.combine(now.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
+    last_week_start = today_start - timedelta(days=7)
+    last_week_end = last_week_start + timedelta(days=1)
+
+    # Active sessions & tables
+    tables_res = await db.execute(
+        select(Table.id, Table.capacity).where(
+            Table.restaurant_id == restaurant_id, Table.is_active == True
         )
     )
-    active_sessions = active_result.scalar() or 0
+    all_tables = tables_res.all()
+    total_tables = len(all_tables)
 
-    # Today's orders and revenue
-    orders_result = await db.execute(
-        select(func.count(Order.id), func.coalesce(
-            func.sum(Order.total_amount), 0))
-        .join(Session)
-        .join(Table)
-        .where(
+    sessions_res = await db.execute(
+        select(Table.id).join(Session, Session.table_id == Table.id).where(
+            Table.restaurant_id == restaurant_id,
+            Session.status.in_([SessionStatus.ACTIVE, SessionStatus.CREATED])
+        )
+    )
+    active_tables_ids = {row[0] for row in sessions_res.all()}
+    active_tables = len(active_tables_ids)
+    active_sessions = active_tables
+    table_occupancy_rate = round((active_tables / total_tables * 100), 2) if total_tables > 0 else 0.0
+
+    # Orders & Revenue Today
+    today_orders_res = await db.execute(
+        select(func.count(Order.id), func.coalesce(func.sum(Order.total_amount), 0))
+        .join(Session).join(Table).where(
             Table.restaurant_id == restaurant_id,
             Order.submitted_at >= today_start,
             Order.status != OrderStatus.CANCELLED,
         )
     )
-    row = orders_result.one()
-    total_orders_today = row[0] or 0
-    revenue_today = float(row[1] or 0)
+    row_today = today_orders_res.one()
+    orders_today = row_today[0] or 0
+    revenue_today = float(row_today[1] or 0)
 
-    # Table count
-    tables_result = await db.execute(
-        select(func.count(Table.id)).where(
-            Table.restaurant_id == restaurant_id, Table.is_active == True,
+    # Orders & Revenue Last Week (for trend)
+    last_week_orders_res = await db.execute(
+        select(func.count(Order.id), func.coalesce(func.sum(Order.total_amount), 0))
+        .join(Session).join(Table).where(
+            Table.restaurant_id == restaurant_id,
+            Order.submitted_at >= last_week_start,
+            Order.submitted_at < last_week_end,
+            Order.status != OrderStatus.CANCELLED,
         )
     )
-    total_tables = tables_result.scalar() or 0
+    row_last_week = last_week_orders_res.one()
+    orders_last_week = row_last_week[0] or 0
+    revenue_last_week = float(row_last_week[1] or 0)
 
-    # Staff count
-    staff_result = await db.execute(
-        select(func.count(UserRole.id)).where(
-            UserRole.restaurant_id == restaurant_id,
-        )
+    orders_trend = ((orders_today - orders_last_week) / orders_last_week * 100) if orders_last_week > 0 else (100.0 if orders_today > 0 else 0.0)
+    revenue_trend = ((revenue_today - revenue_last_week) / revenue_last_week * 100) if revenue_last_week > 0 else (100.0 if revenue_today > 0 else 0.0)
+
+    aov = (revenue_today / orders_today) if orders_today > 0 else 0.0
+
+    # Live Orders statuses
+    live_res = await db.execute(
+        select(Order.status, func.count(Order.id))
+        .join(Session).join(Table).where(
+            Table.restaurant_id == restaurant_id,
+            Order.status.in_([OrderStatus.PREPARING, OrderStatus.READY])
+        ).group_by(Order.status)
     )
-    active_staff = staff_result.scalar() or 0
+    live_counts = dict(live_res.all())
+    preparing = live_counts.get(OrderStatus.PREPARING, 0)
+    ready = live_counts.get(OrderStatus.READY, 0)
 
-    return DashboardStats(
-        active_sessions=active_sessions,
-        total_orders_today=total_orders_today,
+    # Hourly Trend Today
+    hourly_res = await db.execute(
+        select(
+            func.extract('hour', Order.submitted_at).label('hr'),
+            func.coalesce(func.sum(Order.total_amount), 0),
+            func.count(Order.id)
+        )
+        .join(Session).join(Table).where(
+            Table.restaurant_id == restaurant_id,
+            Order.submitted_at >= today_start,
+            Order.status != OrderStatus.CANCELLED,
+        ).group_by('hr').order_by('hr')
+    )
+    hourly_trend = []
+    for hr, rev, ords in hourly_res.all():
+        ampm = "AM" if hr < 12 else "PM"
+        hr_disp = int(hr) % 12 or 12
+        hourly_trend.append(HourlyMetric(time=f"{hr_disp} {ampm}", revenue=float(rev), orders=int(ords)))
+
+    # Category Breakdown
+    cat_res = await db.execute(
+        select(
+            Category.name,
+            func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0)
+        )
+        .join(MenuItem, OrderItem.menu_item_id == MenuItem.id)
+        .join(Category, MenuItem.category_id == Category.id)
+        .join(Order, OrderItem.order_id == Order.id)
+        .join(Session, Order.session_id == Session.id)
+        .join(Table, Session.table_id == Table.id)
+        .where(
+            Table.restaurant_id == restaurant_id,
+            Order.submitted_at >= today_start,
+            Order.status != OrderStatus.CANCELLED,
+        ).group_by(Category.name)
+    )
+    cat_rows = cat_res.all()
+    cat_total = sum(float(r[1]) for r in cat_rows)
+    category_sales = []
+    for cat_name, amt in cat_rows:
+        rev = float(amt)
+        pct = (rev / cat_total * 100) if cat_total > 0 else 0
+        category_sales.append(CategoryMetric(category=cat_name, revenue=rev, percentage=round(pct, 2)))
+
+    # Items performance
+    item_res = await db.execute(
+        select(
+            MenuItem.name,
+            func.sum(OrderItem.quantity).label('qty'),
+            func.sum(OrderItem.quantity * OrderItem.unit_price).label('rev')
+        )
+        .join(MenuItem, OrderItem.menu_item_id == MenuItem.id)
+        .join(Order, OrderItem.order_id == Order.id)
+        .join(Session, Order.session_id == Session.id)
+        .join(Table, Session.table_id == Table.id)
+        .where(
+            Table.restaurant_id == restaurant_id,
+            Order.status != OrderStatus.CANCELLED,
+            Order.submitted_at >= today_start - timedelta(days=30)
+        ).group_by(MenuItem.name).order_by(func.sum(OrderItem.quantity).desc())
+    )
+    items_list = item_res.all()
+    top_items = [ItemMetric(name=r[0], orders=int(r[1] or 0), revenue=float(r[2] or 0)) for r in items_list[:5]]
+    
+    # dead_stock (bottom 5 but ascending) 
+    dead_stock_sql = await db.execute(
+        select(
+            MenuItem.name,
+            func.sum(OrderItem.quantity).label('qty'),
+            func.sum(OrderItem.quantity * OrderItem.unit_price).label('rev')
+        )
+        .join(MenuItem, OrderItem.menu_item_id == MenuItem.id)
+        .join(Order, OrderItem.order_id == Order.id)
+        .join(Session, Order.session_id == Session.id)
+        .join(Table, Session.table_id == Table.id)
+        .where(
+            Table.restaurant_id == restaurant_id,
+            Order.status != OrderStatus.CANCELLED,
+            Order.submitted_at >= today_start - timedelta(days=30)
+        ).group_by(MenuItem.name).order_by(func.sum(OrderItem.quantity).asc()).limit(5)
+    )
+    dead_stock = [ItemMetric(name=r[0], orders=int(r[1] or 0), revenue=float(r[2] or 0)) for r in dead_stock_sql.all()]
+
+    return RestaurantDashboardStats(
         revenue_today=revenue_today,
+        revenue_trend=round(revenue_trend, 2),
+        orders_today=orders_today,
+        orders_trend=round(orders_trend, 2),
+        active_sessions=active_sessions,
         total_tables=total_tables,
-        active_staff=active_staff,
+        active_tables=active_tables,
+        table_occupancy_rate=table_occupancy_rate,
+        live_orders_preparing=preparing,
+        live_orders_ready=ready,
+        average_order_value=round(aov, 2),
+        hourly_trend=hourly_trend,
+        category_sales=category_sales,
+        top_items=top_items,
+        dead_stock=dead_stock
+    )
+
+
+async def get_global_dashboard_stats(db: AsyncSession) -> SuperAdminDashboardStats:
+    """Compute global platform dashboard statistics for Super Admin."""
+    from datetime import timedelta
+    from app.models.order import OrderStatus
+
+    now = datetime.now(timezone.utc)
+    today_start = datetime.combine(now.date(), datetime.min.time()).replace(tzinfo=timezone.utc)
+    last_week_start = today_start - timedelta(days=7)
+    last_week_end = last_week_start + timedelta(days=1)
+
+    # GMV & Orders Today
+    today_res = await db.execute(
+        select(func.count(Order.id), func.coalesce(func.sum(Order.total_amount), 0))
+        .where(
+            Order.submitted_at >= today_start,
+            Order.status != OrderStatus.CANCELLED,
+        )
+    )
+    r_today = today_res.one()
+    orders_today = r_today[0] or 0
+    gmv_today = float(r_today[1] or 0)
+
+    # GMV Last Week
+    last_week_res = await db.execute(
+        select(func.coalesce(func.sum(Order.total_amount), 0))
+        .where(
+            Order.submitted_at >= last_week_start,
+            Order.submitted_at < last_week_end,
+            Order.status != OrderStatus.CANCELLED,
+        )
+    )
+    r_last_week = last_week_res.one()
+    gmv_last_week = float(r_last_week[0] or 0)
+    gmv_trend = ((gmv_today - gmv_last_week) / gmv_last_week * 100) if gmv_last_week > 0 else (100.0 if gmv_today > 0 else 0.0)
+
+    # Active Restaurants (that have received an order today)
+    rest_res = await db.execute(
+        select(func.count(func.distinct(Table.restaurant_id)))
+        .join(Session, Session.table_id == Table.id)
+        .join(Order, Order.session_id == Session.id)
+        .where(
+            Order.submitted_at >= today_start,
+            Order.status != OrderStatus.CANCELLED
+        )
+    )
+    total_active_restaurants = rest_res.scalar() or 0
+
+    # Global active sessions
+    sess_res = await db.execute(
+        select(func.count(Session.id)).where(Session.status.in_([SessionStatus.ACTIVE, SessionStatus.CREATED]))
+    )
+    global_active_sessions = sess_res.scalar() or 0
+
+    # Restaurant Performance (Top and Lowest) - over last 30 days
+    sentinel_id = UUID("00000000-0000-0000-0000-000000000000")
+    perf_res = await db.execute(
+        select(
+            Restaurant.id, Restaurant.name, 
+            func.coalesce(func.sum(Order.total_amount), 0).label('rev'), 
+            func.count(Order.id).label('ords')
+        )
+        .join(Table, Table.restaurant_id == Restaurant.id)
+        .join(Session, Session.table_id == Table.id)
+        .join(Order, Order.session_id == Session.id)
+        .where(
+            Order.submitted_at >= today_start - timedelta(days=30),
+            Order.status != OrderStatus.CANCELLED,
+            Restaurant.id != sentinel_id
+        ).group_by(Restaurant.id).order_by(func.coalesce(func.sum(Order.total_amount), 0).desc())
+    )
+    perf_list = perf_res.all()
+    
+    top_restaurants = [
+        RestaurantPerformanceMetric(id=r[0], name=r[1], revenue=float(r[2]), orders=int(r[3]))
+        for r in perf_list[:5]
+    ]
+    lowest_restaurants = [
+        RestaurantPerformanceMetric(id=r[0], name=r[1], revenue=float(r[2]), orders=int(r[3]))
+        for r in reversed(perf_list[-5:])
+    ] if len(perf_list) > 5 else []
+
+    # Platform growth trend (last 7 days daily GMV)
+    platform_trend = []
+    for i in range(6, -1, -1):
+        d_start = today_start - timedelta(days=i)
+        d_end = d_start + timedelta(days=1)
+        d_res = await db.execute(
+            select(func.count(Order.id), func.coalesce(func.sum(Order.total_amount), 0))
+            .where(
+                Order.submitted_at >= d_start,
+                Order.submitted_at < d_end,
+                Order.status != OrderStatus.CANCELLED,
+            )
+        )
+        d_row = d_res.one()
+        platform_trend.append(DailyPlatformMetric(
+            date=d_start.strftime("%b %d"),
+            orders=d_row[0] or 0,
+            revenue=float(d_row[1] or 0)
+        ))
+
+    # Global Hourly trend (Today)
+    hourly_res = await db.execute(
+        select(
+            func.extract('hour', Order.submitted_at).label('hr'),
+            func.coalesce(func.sum(Order.total_amount), 0),
+            func.count(Order.id)
+        )
+        .where(
+            Order.submitted_at >= today_start,
+            Order.status != OrderStatus.CANCELLED,
+        ).group_by('hr').order_by('hr')
+    )
+    global_hourly_trend = []
+    for hr, rev, ords in hourly_res.all():
+        ampm = "AM" if hr < 12 else "PM"
+        hr_disp = int(hr) % 12 or 12
+        global_hourly_trend.append(HourlyMetric(time=f"{hr_disp} {ampm}", revenue=float(rev), orders=int(ords)))
+
+    return SuperAdminDashboardStats(
+        total_gmv_today=gmv_today,
+        gmv_trend=round(gmv_trend, 2),
+        total_active_restaurants=total_active_restaurants,
+        total_orders_today=orders_today,
+        global_active_sessions=global_active_sessions,
+        top_restaurants=top_restaurants,
+        lowest_restaurants=lowest_restaurants,
+        global_hourly_trend=global_hourly_trend,
+        platform_growth_trend=platform_trend
     )
 
 

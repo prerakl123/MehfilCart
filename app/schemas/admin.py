@@ -57,10 +57,68 @@ class RestaurantConfigUpdate(BaseModel):
     idle_timeout_minutes: int | None = Field(default=None, ge=5, le=60)
 
 
-class DashboardStats(BaseModel):
-    """Admin dashboard overview statistics."""
-    active_sessions: int = 0
-    total_orders_today: int = 0
-    revenue_today: float = 0.0
-    total_tables: int = 0
-    active_staff: int = 0
+class HourlyMetric(BaseModel):
+    time: str
+    revenue: float
+    orders: int
+
+class CategoryMetric(BaseModel):
+    category: str
+    revenue: float
+    percentage: float
+
+class ItemMetric(BaseModel):
+    name: str
+    orders: int
+    revenue: float
+
+class RestaurantPerformanceMetric(BaseModel):
+    id: UUID
+    name: str
+    revenue: float
+    orders: int
+
+class DailyPlatformMetric(BaseModel):
+    date: str
+    revenue: float
+    orders: int
+
+class RestaurantDashboardStats(BaseModel):
+    """Restaurant Admin dashboard comprehensive statistics."""
+    # Top Level
+    revenue_today: float
+    revenue_trend: float  # percentage change from same day last week
+    orders_today: int
+    orders_trend: float   # percentage change from same day last week
+    active_sessions: int
+    total_tables: int
+    active_tables: int
+    table_occupancy_rate: float
+    
+    # Chart Data
+    hourly_trend: list[HourlyMetric] = Field(default_factory=list)
+    category_sales: list[CategoryMetric] = Field(default_factory=list)
+    top_items: list[ItemMetric] = Field(default_factory=list)
+    dead_stock: list[ItemMetric] = Field(default_factory=list)
+    
+    # Operational
+    live_orders_preparing: int
+    live_orders_ready: int
+    average_order_value: float
+
+class SuperAdminDashboardStats(BaseModel):
+    """Super Admin global dashboard statistics."""
+    # Top Level
+    total_gmv_today: float
+    gmv_trend: float      # percentage change from same day last week
+    total_active_restaurants: int
+    total_orders_today: int
+    global_active_sessions: int
+    
+    # Restaurant Performance
+    top_restaurants: list[RestaurantPerformanceMetric] = Field(default_factory=list)
+    lowest_restaurants: list[RestaurantPerformanceMetric] = Field(default_factory=list)
+    
+    # Chart Data
+    global_hourly_trend: list[HourlyMetric] = Field(default_factory=list)
+    platform_growth_trend: list[DailyPlatformMetric] = Field(default_factory=list)

@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_any_role
 from app.models.user import User
 from app.schemas.admin import (
-    DashboardStats, RestaurantConfigUpdate, StaffCreate, StaffResponse,
+    RestaurantDashboardStats, SuperAdminDashboardStats, RestaurantConfigUpdate, StaffCreate, StaffResponse,
     TableCreate, TableResponse, TableUpdate,
 )
 from app.schemas.auth import MessageResponse
@@ -143,9 +143,29 @@ async def delete_restaurant(
 
 
 @router.get(
+    "/dashboard/global",
+    response_model=SuperAdminDashboardStats,
+    summary="Global Dashboard Stats",
+    description="Get platform-wide overview statistics for Super Admin dashboard.",
+    dependencies=[_super_admin_dep],
+)
+async def get_global_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return platform-wide statistics for a super admin dashboard: total GMV, 
+    active restaurants, top/lowest performers, and platform growth trend.
+
+    :returns: SuperAdminDashboardStats.
+    """
+    return await admin_service.get_global_dashboard_stats(db)
+
+
+@router.get(
     "/dashboard/{restaurant_id}",
-    response_model=DashboardStats,
-    summary="Dashboard Stats",
+    response_model=RestaurantDashboardStats,
+    summary="Restaurant Dashboard Stats",
     description="Get overview statistics for the restaurant dashboard.",
     dependencies=[_admin_dep],
 )
@@ -155,10 +175,11 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Return overview statistics for a restaurant dashboard: active sessions, orders, and revenue.
+    Return comprehensive statistics for a restaurant dashboard: active sessions, 
+    orders, revenue, charts for hourly trends, category breakdown, top items.
 
     :param restaurant_id: UUID of the restaurant whose stats to compute.
-    :returns: DashboardStats with today's order count, revenue, and table/staff counts.
+    :returns: RestaurantDashboardStats.
     """
     return await admin_service.get_dashboard_stats(db, restaurant_id)
 

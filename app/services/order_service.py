@@ -43,7 +43,12 @@ async def submit_order(
     if str(session.host_user_id) != str(user.id):
         raise ForbiddenException("Only the session host can submit orders.")
 
-    if session.status not in (SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.SUBMITTED, SessionStatus.IN_PROGRESS):
+    if session.status not in (
+        SessionStatus.CREATED,
+        SessionStatus.ACTIVE,
+        SessionStatus.SUBMITTED,
+        SessionStatus.IN_PROGRESS
+    ):
         raise BadRequestException(
             f"Cannot submit order in {session.status.value} state.")
 
@@ -88,7 +93,8 @@ async def submit_order(
 
     # Re-query with eager loads for response serialization
     result = await db.execute(
-        select(Order).options(*_order_load_options()).where(Order.id == order.id)
+        select(Order).options(*_order_load_options()
+                              ).where(Order.id == order.id)
     )
     return result.scalar_one()
 
@@ -96,7 +102,8 @@ async def submit_order(
 async def get_order(db: AsyncSession, order_id: UUID) -> Order:
     """Fetch an order by ID."""
     result = await db.execute(
-        select(Order).options(*_order_load_options()).where(Order.id == order_id)
+        select(Order).options(*_order_load_options()
+                              ).where(Order.id == order_id)
     )
     order = result.scalar_one_or_none()
     if order is None:
