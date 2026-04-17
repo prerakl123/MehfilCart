@@ -80,6 +80,7 @@ async def verify_otp_and_authenticate(
         display_name=user.display_name,
         role=role,
         restaurant_id=str(restaurant_id) if restaurant_id else None,
+        profile_incomplete=user.display_name is None or user.display_name.strip() == "",
     )
     return token_response, refresh_token
 
@@ -109,6 +110,7 @@ async def refresh_access_token(
         display_name=user.display_name,
         role=current_role,
         restaurant_id=str(restaurant_id) if restaurant_id else None,
+        profile_incomplete=user.display_name is None or user.display_name.strip() == "",
     )
 
 

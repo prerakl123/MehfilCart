@@ -20,13 +20,14 @@ async def get_user_profile(db: AsyncSession, user: User) -> dict:
     return {
         "id": user.id,
         "phone": user.phone,
+        "email": user.email,
         "display_name": user.display_name,
         "role": role,
         "restaurant_id": restaurant_id,
     }
 
 
-async def update_display_name(db: AsyncSession, user: User, new_name: str) -> dict:
+async def update_display_name(db: AsyncSession, user: User, new_name: str, new_email: str | None = None) -> dict:
     """
     Update display name directly for non-waiter users.
     For waiters, create a NameChangeRequest instead.
@@ -38,12 +39,15 @@ async def update_display_name(db: AsyncSession, user: User, new_name: str) -> di
 
     # Direct update for admins, guests, hosts
     user.display_name = new_name
+    if new_email is not None:
+        user.email = new_email
     await db.commit()
     await db.refresh(user)
 
     return {
         "id": user.id,
         "phone": user.phone,
+        "email": user.email,
         "display_name": user.display_name,
         "role": role,
         "restaurant_id": restaurant_id,
@@ -84,6 +88,7 @@ async def create_name_change_request(
     return {
         "id": user.id,
         "phone": user.phone,
+        "email": user.email,
         "display_name": user.display_name,
         "role": role,
         "restaurant_id": restaurant_id,

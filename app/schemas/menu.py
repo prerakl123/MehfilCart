@@ -44,6 +44,7 @@ class MenuItemCreate(BaseModel):
     diet_type: DietType = DietType.VEG
     customizations: dict | None = None
     display_order: int = 0
+    prep_time_minutes: int | None = Field(default=None, ge=1)
 
 
 class MenuItemUpdate(BaseModel):
@@ -57,6 +58,7 @@ class MenuItemUpdate(BaseModel):
     is_available: bool | None = None
     customizations: dict | None = None
     display_order: int | None = None
+    prep_time_minutes: int | None = Field(default=None, ge=1)
 
 
 class MenuItemResponse(BaseModel):
@@ -72,6 +74,7 @@ class MenuItemResponse(BaseModel):
     is_available: bool
     customizations: dict | None
     display_order: int
+    prep_time_minutes: int | None
 
     model_config = {"from_attributes": True}
 

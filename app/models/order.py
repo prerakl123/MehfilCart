@@ -58,6 +58,11 @@ class Order(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         """Display name of the user who submitted the order, if available."""
         return self.submitter.display_name if self.submitter else None
 
+    @property
+    def table_label(self) -> str | None:
+        """Label of the table where this order was placed."""
+        return self.session.table.label if self.session and getattr(self.session, 'table', None) else None
+
     def __repr__(self):
         """Return a human-readable representation of the Order instance."""
         return f"<Order {self.id} status={self.status} total={self.total_amount}>"
@@ -101,6 +106,11 @@ class OrderItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     def menu_item_name(self) -> str:
         """Name of the menu item, falling back to 'Unknown' if the relation is missing."""
         return self.menu_item.name if self.menu_item else "Unknown"
+
+    @property
+    def prep_time_minutes(self) -> int | None:
+        """Preparation time of the underlying menu item."""
+        return self.menu_item.prep_time_minutes if self.menu_item else None
 
     def __repr__(self):
         """Return a human-readable representation of the OrderItem instance."""

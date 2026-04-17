@@ -8,6 +8,7 @@ from app.routers.orders import router as orders_router
 from app.routers.sessions import router as sessions_router
 from app.routers.user import router as user_router
 from app.routers.private import router as private_router
+from app.routers.service_actions import router as service_actions_router
 
 
 all_routers = [
@@ -19,4 +20,5 @@ all_routers = [
     admin_router,
     user_router,
     private_router,
+    service_actions_router,
 ]

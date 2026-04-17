@@ -48,4 +48,4 @@ async def update_my_profile(
     :param body: Request body containing the desired new display name.
     :returns: Updated profile dict; includes a ``pending_request`` flag for waiters.
     """
-    return await user_service.update_display_name(db, current_user, body.display_name)
+    return await user_service.update_display_name(db, current_user, body.display_name, body.email)

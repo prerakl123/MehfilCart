@@ -10,7 +10,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_any_role
 from app.models.user import User
 from app.schemas.admin import (
-    RestaurantDashboardStats, SuperAdminDashboardStats, RestaurantConfigUpdate, StaffCreate, StaffResponse,
+    RestaurantDashboardStats, SuperAdminDashboardStats, 
+    RestaurantConfigUpdate, StaffCreate, StaffResponse,
     TableCreate, TableResponse, TableUpdate,
 )
 from app.schemas.auth import MessageResponse
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 # All admin endpoints require SUPER_ADMIN or RESTAURANT_ADMIN role
 _admin_dep = Depends(require_any_role("SUPER_ADMIN", "RESTAURANT_ADMIN"))
 _super_admin_dep = Depends(require_any_role("SUPER_ADMIN"))
+_staff_dep = Depends(require_any_role("SUPER_ADMIN", "RESTAURANT_ADMIN", "WAITER"))
 
 
 # -- Restaurant CRUD (Super Admin) --
@@ -191,7 +193,7 @@ async def get_dashboard(
     response_model=list[TableResponse],
     summary="List Tables",
     description="List all tables for a restaurant.",
-    dependencies=[_admin_dep],
+    dependencies=[_staff_dep],
 )
 async def list_tables(
     restaurant_id: UUID,
@@ -438,7 +440,7 @@ async def update_config(
     response_model=list[OrderResponse],
     summary="List Orders (Admin)",
     description="List all orders for a specific restaurant.",
-    dependencies=[_admin_dep],
+    dependencies=[_staff_dep],
 )
 async def list_admin_orders(
     restaurant_id: UUID,

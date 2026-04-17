@@ -570,6 +570,7 @@ async def list_orders(db: AsyncSession, restaurant_id: UUID) -> list[Order]:
             selectinload(Order.items).selectinload(OrderItem.menu_item),
             selectinload(Order.items).selectinload(OrderItem.adder),
             selectinload(Order.submitter),
+            selectinload(Order.session).selectinload(Session.table),
         )
         .where(
             Table.restaurant_id == restaurant_id,

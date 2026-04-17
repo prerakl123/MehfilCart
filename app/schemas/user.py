@@ -10,6 +10,7 @@ class UserProfileResponse(BaseModel):
     """Current user profile."""
     id: UUID
     phone: str
+    email: str | None = None
     display_name: str | None = None
     role: str | None = None
     restaurant_id: UUID | None = None
@@ -20,6 +21,7 @@ class UserProfileResponse(BaseModel):
 class UserProfileUpdate(BaseModel):
     """Request body to update user profile."""
     display_name: str = Field(..., min_length=1, max_length=50)
+    email: str | None = Field(default=None, max_length=100)
 
 
 class NameChangeRequestResponse(BaseModel):

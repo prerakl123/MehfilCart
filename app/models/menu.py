@@ -65,6 +65,8 @@ class MenuItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         JSON, nullable=True, default=dict)
     display_order: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False)
+    prep_time_minutes: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
 
     # Relationships
     category = relationship("Category", back_populates="items")

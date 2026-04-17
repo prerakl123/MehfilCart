@@ -34,6 +34,7 @@ class OrderItemResponse(BaseModel):
     unit_price: float
     customizations: dict | None
     notes: str | None
+    prep_time_minutes: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -50,6 +51,7 @@ class OrderResponse(BaseModel):
     total_amount: float
     cancelled_by: UUID | None
     cancel_reason: str | None
+    table_label: str | None = None
     items: list[OrderItemResponse] = []
 
     model_config = {"from_attributes": True}

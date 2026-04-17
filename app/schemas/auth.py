@@ -23,6 +23,7 @@ class TokenResponse(BaseModel):
     display_name: str | None = None
     role: str | None = None
     restaurant_id: str | None = None
+    profile_incomplete: bool = False
 
 
 class RefreshRequest(BaseModel):
