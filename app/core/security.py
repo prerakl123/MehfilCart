@@ -5,7 +5,8 @@ JWT creation, validation, and password utilities.
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from app.core.config import settings
 from app.core.exceptions import UnauthorizedException
@@ -44,7 +45,7 @@ def decode_token(token: str) -> dict:
         if payload.get("sub") is None:
             raise UnauthorizedException("Invalid token: missing subject")
         return payload
-    except JWTError as e:
+    except PyJWTError as e:
         raise UnauthorizedException(f"Invalid or expired token: {e}")
 
 
