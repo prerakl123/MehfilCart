@@ -1,0 +1,89 @@
+# MehfilCart full-stack dev environment.
+#
+#   sudo docker compose up -d --build
+#
+# Brings up PostgreSQL+PostGIS, Redis, the FastAPI backend, and the Next.js
+# frontend on one network. Source is bind-mounted, so both apps hot-reload on
+# code changes -- no rebuild needed for day-to-day editing.
+#
+# MAPTILER_API_KEY is read from the .env file in this directory (the same file
+# the backend already uses). Set it there to enable maps + geocoding.
+name: mehfilcart
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4   # official Postgres 16 image WITH PostGIS baked in
+    container_name: mehfilcart-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mehfilcart
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mehfilcart"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: mehfilcart-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+    container_name: mehfilcart-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Point at the in-network services (override the .env localhost values).
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/mehfilcart
+      REDIS_URL: redis://redis:6379/0
+      GEOCODING_PROVIDER: ${GEOCODING_PROVIDER:-maptiler}
+      MAPTILER_API_KEY: ${MAPTILER_API_KEY:-}
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app                 # live source for hot reload
+      - backend_venv:/app/.venv  # keep the container's own venv
+
+  frontend:
+    build:
+      context: ../../JavaScriptProjects/MehfilCartUI
+    container_name: mehfilcart-frontend
+    depends_on:
+      - backend
+    environment:
+      # Consumed in the browser, so these must be host-reachable URLs.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:8000
+      NEXT_PUBLIC_MAPTILER_KEY: ${MAPTILER_API_KEY:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../JavaScriptProjects/MehfilCartUI:/app  # live source for hot reload
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+
+volumes:
+  pgdata:
+  redisdata:
+  backend_venv:
+  frontend_node_modules:
+  frontend_next:

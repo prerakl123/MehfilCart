@@ -1,0 +1,18 @@
+# Python virtualenv (the image builds its own under /app/.venv)
+.venv
+# Caches
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+# VCS
+.git
+.gitignore
+# Secrets -- provided at runtime via compose env / bind-mounted .env
+.env
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
