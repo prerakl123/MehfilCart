@@ -13,7 +13,8 @@ from app.schemas.session import (
     MemberActionRequest, SessionCreate, SessionReopenRequest,
     SessionResponse, SessionUpdate, TransferHostRequest,
 )
-from app.services import session_service
+from app.schemas.order import OrderResponse
+from app.services import order_service, session_service
 from app.websocket.manager import ws_manager
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
@@ -29,6 +30,24 @@ async def _broadcast_session_update(session_id: UUID, db: AsyncSession):
     session = await session_service.get_session(db, session_id)
     payload = SessionResponse.model_validate(session).model_dump()
     await ws_manager.broadcast_to_room(f"session:{session_id}", "session:updated", payload)
+
+
+async def _broadcast_finalized_orders(order_ids: list[UUID], db: AsyncSession):
+    """
+    Push the post-close status of any auto-finalized orders (see
+    ``session_service._finalize_session_orders``) to admin/staff/session rooms so
+    live dashboards drop them from their active counts immediately.
+
+    :param order_ids: IDs of orders that were auto-cancelled/completed.
+    :param db: Active database session for the re-fetch query.
+    """
+    for order_id in order_ids:
+        order = await order_service.get_order(db, order_id)
+        order_dict = OrderResponse.model_validate(order).model_dump(mode="json")
+        restaurant_id = order.session.table.restaurant_id
+        await ws_manager.broadcast_to_room(f"admin:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"staff:{restaurant_id}", "order:updated", order_dict)
+        await ws_manager.broadcast_to_room(f"session:{order.session_id}", "order:updated", order_dict)
 
 
 @router.post(
@@ -153,8 +172,11 @@ async def update_session(
             db, session_id, body.allow_additions, current_user,
         )
     if body.status is not None:
-        session = await session_service.update_session_status(db, session_id, body.status)
-        
+        session, finalized_order_ids = await session_service.update_session_status(
+            db, session_id, body.status, actor_id=current_user.id,
+        )
+        await _broadcast_finalized_orders(finalized_order_ids, db)
+
     await _broadcast_session_update(session_id, db)
     return session
 
@@ -258,7 +280,8 @@ async def leave_session(
     :raises BadRequestException: If the session is already closed or inactive.
     :raises NotFoundException: If the user has no active membership in the session.
     """
-    await session_service.leave_session(db, session_id, current_user)
+    finalized_order_ids = await session_service.leave_session(db, session_id, current_user)
+    await _broadcast_finalized_orders(finalized_order_ids, db)
     await _broadcast_session_update(session_id, db)
     return MessageResponse(message="Successfully left the session.")
 
@@ -309,6 +332,9 @@ async def close_session(
     :returns: Confirmation message.
     """
     from app.models.session import SessionStatus
-    await session_service.update_session_status(db, session_id, SessionStatus.CLOSED)
+    _, finalized_order_ids = await session_service.update_session_status(
+        db, session_id, SessionStatus.CLOSED, actor_id=current_user.id,
+    )
+    await _broadcast_finalized_orders(finalized_order_ids, db)
     await _broadcast_session_update(session_id, db)
     return MessageResponse(message="Session closed.")

@@ -20,7 +20,10 @@ from app.schemas.admin import (
     RestaurantDashboardStats, SuperAdminDashboardStats,
     HourlyMetric, CategoryMetric, ItemMetric, RestaurantPerformanceMetric, DailyPlatformMetric
 )
+from app.schemas.order import OrderResponse
 from app.schemas.restaurant import RestaurantCreate, RestaurantUpdate
+from app.schemas.session import SessionDetailResponse, SessionEventResponse, SessionResponse
+from app.services import order_service, session_event_service, session_service
 from app.utils.phone import normalize_phone, is_valid_phone
 from app.utils.qr import generate_table_qr_url
 
@@ -609,3 +612,24 @@ async def list_sessions(db: AsyncSession, restaurant_id: UUID) -> list[Session]:
     )
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def get_session_detail(
+    db: AsyncSession, restaurant_id: UUID, session_id: UUID,
+) -> SessionDetailResponse:
+    """
+    Fetch a session's full details, orders, and chronological audit timeline,
+    scoped to the given restaurant so admins can't view other restaurants' sessions.
+    """
+    session = await session_service.get_session(db, session_id)
+    if session.table is None or session.table.restaurant_id != restaurant_id:
+        raise NotFoundException("Session not found for this restaurant.")
+
+    orders, _ = await order_service.list_orders(db, session_id=session_id, limit=100)
+    events = await session_event_service.list_events(db, session_id)
+
+    return SessionDetailResponse(
+        **SessionResponse.model_validate(session).model_dump(),
+        orders=[OrderResponse.model_validate(o) for o in orders],
+        events=[SessionEventResponse.model_validate(e) for e in events],
+    )

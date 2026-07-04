@@ -15,8 +15,9 @@ from app.core.exceptions import (
 )
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.session import Session, SessionStatus
+from app.models.session_event import SessionEventType
 from app.models.user import User
-from app.services import cart_service
+from app.services import cart_service, session_event_service
 
 
 def _order_load_options():
@@ -88,6 +89,15 @@ async def submit_order(
     session.status = SessionStatus.SUBMITTED
     await db.flush()
 
+    await session_event_service.log_event(
+        db, session.id, SessionEventType.ORDER_SUBMITTED, actor_id=user.id,
+        payload={
+            "order_id": str(order.id),
+            "total_amount": float(cart.total),
+            "item_count": len(cart.items),
+        },
+    )
+
     # Clear the Redis cart
     await cart_service.clear_cart(redis, session.id)
 
@@ -147,6 +157,7 @@ async def update_order_status(
     db: AsyncSession,
     order_id: UUID,
     new_status: OrderStatus,
+    actor_id: UUID | None = None,
 ) -> Order:
     """Transition an order's status. Enforces valid transitions."""
     order = await get_order(db, order_id)
@@ -164,8 +175,18 @@ async def update_order_status(
             f"Cannot transition from {order.status.value} to {new_status.value}."
         )
 
+    from_status = order.status
     order.status = new_status
     await db.flush()
+
+    await session_event_service.log_event(
+        db, order.session_id, SessionEventType.ORDER_STATUS_CHANGED, actor_id=actor_id,
+        payload={
+            "order_id": str(order.id),
+            "from_status": from_status.value,
+            "to_status": new_status.value,
+        },
+    )
     return order
 
 
@@ -185,4 +206,9 @@ async def cancel_order(
     order.cancelled_by = cancelled_by.id
     order.cancel_reason = reason
     await db.flush()
+
+    await session_event_service.log_event(
+        db, order.session_id, SessionEventType.ORDER_CANCELLED, actor_id=cancelled_by.id,
+        payload={"order_id": str(order.id), "reason": reason},
+    )
     return order

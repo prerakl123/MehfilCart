@@ -24,7 +24,7 @@ from app.schemas.order import OrderResponse
 from app.schemas.restaurant import (
     RestaurantCreate, RestaurantResponse, RestaurantUpdate,
 )
-from app.schemas.session import SessionResponse
+from app.schemas.session import SessionDetailResponse, SessionResponse
 from app.services import admin_service, location_service
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -385,17 +385,16 @@ async def get_table_qr(
 
     :param restaurant_id: UUID of the restaurant that owns the table.
     :param table_id: UUID of the table to generate the QR code for.
-    :param base_url: Optional override for the base URL; falls back to APP_BASE_URL.
+    :param base_url: Optional override for the base URL; falls back to FRONTEND_URL.
     :returns: PNG image bytes with ``image/png`` media type.
     """
     from app.utils.qr import generate_table_qr_url, generate_qr_image
-    from app.core.config import settings
 
-    # Use provided base_url or fallback to app settings
+    # Use provided base_url or fallback to the public frontend URL
     url = generate_table_qr_url(
         restaurant_id=str(restaurant_id),
         table_id=str(table_id),
-        base_url=base_url or settings.APP_BASE_URL
+        base_url=base_url,
     )
     img_bytes = generate_qr_image(url)
     return Response(content=img_bytes, media_type="image/png")
@@ -608,6 +607,31 @@ async def list_admin_sessions(
     :returns: List of SessionResponse objects ordered by creation time descending.
     """
     return await admin_service.list_sessions(db, restaurant_id)
+
+
+@router.get(
+    "/sessions/{restaurant_id}/{session_id}",
+    response_model=SessionDetailResponse,
+    summary="Get Session Detail (Admin)",
+    description="Retrieve a session's full details, orders, and audit timeline.",
+    dependencies=[_admin_dep],
+)
+async def get_admin_session_detail(
+    restaurant_id: UUID,
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retrieve a session's full details, including its orders and a chronological
+    audit timeline of joins, order activity, and service actions.
+
+    :param restaurant_id: UUID of the restaurant that should own this session.
+    :param session_id: UUID of the session to retrieve.
+    :returns: SessionDetailResponse with orders and events.
+    :raises NotFoundException: If the session doesn't exist or belongs to a different restaurant.
+    """
+    return await admin_service.get_session_detail(db, restaurant_id, session_id)
 
 
 # -- Name Change Requests --

@@ -69,8 +69,9 @@ async def verify_otp(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
-        samesite='lax',
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        domain=settings.COOKIE_DOMAIN,
         max_age=settings.JWT_REFRESH_TOKEN_EXPIRY_DAYS * 86400
     )
     return token_response
@@ -111,14 +112,23 @@ async def refresh_token(
     description="Invalidate the current refresh token.",
 )
 async def logout(
+    response: Response,
     current_user: User = Depends(get_current_user),
     redis: aioredis.Redis = Depends(get_redis),
 ):
     """
-    Invalidate the current user's refresh token, effectively ending their session.
+    Invalidate the current user's refresh token and clear the browser cookie.
 
+    :param response: FastAPI response object used to clear the refresh token cookie.
     :param current_user: The authenticated user derived from the access token.
     :returns: Confirmation message.
     """
     await auth_service.logout_user(redis, str(current_user.id))
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        secure=settings.COOKIE_SECURE,
+        samesite=settings.COOKIE_SAMESITE,
+        domain=settings.COOKIE_DOMAIN,
+    )
     return MessageResponse(message="Logged out successfully.")

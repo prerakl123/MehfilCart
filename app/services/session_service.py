@@ -14,11 +14,14 @@ from app.core.exceptions import (
     BadRequestException, ConflictException, ForbiddenException,
     NotFoundException, SessionExpiredException, SessionLockedException,
 )
+from app.models.order import Order, OrderStatus
 from app.models.session import (
     MemberRole, MemberStatus, Session, SessionMember, SessionStatus,
 )
+from app.models.session_event import SessionEventType
 from app.models.table import Table
 from app.models.user import User
+from app.services import session_event_service
 
 
 def _session_load_options():
@@ -85,6 +88,11 @@ async def create_session(db: AsyncSession, user: User, table_id: UUID) -> Sessio
     )
     db.add(host_member)
     await db.flush()
+
+    await session_event_service.log_event(
+        db, session.id, SessionEventType.SESSION_CREATED, actor_id=user.id,
+        payload={"table_id": str(table_id)},
+    )
 
     # Re-query with eager loads so the response serializer can access members
     result = await db.execute(
@@ -169,6 +177,11 @@ async def request_join(db: AsyncSession, session_id: UUID, user: User) -> Sessio
     )
     db.add(member)
     await db.flush()
+
+    await session_event_service.log_event(
+        db, session_id, SessionEventType.MEMBER_JOIN_REQUESTED, actor_id=user.id,
+        payload={"display_name": user.display_name},
+    )
     return member
 
 
@@ -201,12 +214,19 @@ async def handle_member_action(
 
     if action == "approve":
         member.status = MemberStatus.APPROVED
+        event_type = SessionEventType.MEMBER_APPROVED
     elif action == "reject":
         member.status = MemberStatus.REJECTED
+        event_type = SessionEventType.MEMBER_REJECTED
     else:
         raise BadRequestException(f"Invalid action: {action}")
 
     await db.flush()
+
+    await session_event_service.log_event(
+        db, session_id, event_type, actor_id=host_user.id,
+        payload={"member_user_id": str(member.user_id)},
+    )
     return member
 
 
@@ -228,18 +248,76 @@ async def toggle_additions(
     return session
 
 
+async def _finalize_session_orders(db: AsyncSession, session_id: UUID) -> list[UUID]:
+    """
+    Transition a closing session's orders out of the live pipeline so they stop
+    counting as "active" on staff/admin dashboards. SERVED orders are marked
+    COMPLETED; anything still in RECEIVED/PREPARING/READY is CANCELLED, since the
+    session ended before the kitchen finished them.
+
+    :param session_id: UUID of the session being closed.
+    :returns: IDs of the orders that were updated, for broadcasting by the caller.
+    """
+    result = await db.execute(
+        select(Order).where(
+            Order.session_id == session_id,
+            Order.status.in_([
+                OrderStatus.RECEIVED, OrderStatus.PREPARING,
+                OrderStatus.READY, OrderStatus.SERVED,
+            ]),
+        )
+    )
+    orders = result.scalars().all()
+    for order in orders:
+        from_status = order.status
+        if order.status == OrderStatus.SERVED:
+            order.status = OrderStatus.COMPLETED
+        else:
+            order.status = OrderStatus.CANCELLED
+            order.cancel_reason = "Session closed before the order was served."
+        await session_event_service.log_event(
+            db, session_id, SessionEventType.ORDER_STATUS_CHANGED,
+            payload={
+                "order_id": str(order.id),
+                "from_status": from_status.value,
+                "to_status": order.status.value,
+                "reason": "Session closed",
+            },
+        )
+    await db.flush()
+    return [order.id for order in orders]
+
+
 async def update_session_status(
     db: AsyncSession,
     session_id: UUID,
     new_status: SessionStatus,
-) -> Session:
-    """Update session status. Used internally for state transitions."""
+    actor_id: UUID | None = None,
+) -> tuple[Session, list[UUID]]:
+    """
+    Update session status. Used internally for state transitions.
+
+    :returns: The updated session, and the IDs of any orders auto-finalized
+        as a result of the session closing (empty unless closing).
+    """
     session = await get_session(db, session_id)
+    from_status = session.status
     session.status = new_status
+    finalized_order_ids: list[UUID] = []
     if new_status in (SessionStatus.COMPLETED, SessionStatus.CLOSED):
         session.closed_at = datetime.now(timezone.utc)
+        finalized_order_ids = await _finalize_session_orders(db, session_id)
+        await session_event_service.log_event(
+            db, session_id, SessionEventType.SESSION_CLOSED, actor_id=actor_id,
+            payload={"from_status": from_status.value},
+        )
+    else:
+        await session_event_service.log_event(
+            db, session_id, SessionEventType.SESSION_STATUS_CHANGED, actor_id=actor_id,
+            payload={"from_status": from_status.value, "to_status": new_status.value},
+        )
     await db.flush()
-    return session
+    return session, finalized_order_ids
 
 
 async def reopen_session(
@@ -263,18 +341,28 @@ async def reopen_session(
     return session
 
 
-async def leave_session(db: AsyncSession, session_id: UUID, user: User) -> None:
-    """Leave the session. If the user is the host, close the session for everyone."""
+async def leave_session(db: AsyncSession, session_id: UUID, user: User) -> list[UUID]:
+    """
+    Leave the session. If the user is the host, close the session for everyone.
+
+    :returns: IDs of any orders auto-finalized because the session closed
+        (empty unless the leaving user was the host).
+    """
     session = await get_session(db, session_id)
     if session.status in (SessionStatus.COMPLETED, SessionStatus.CLOSED, SessionStatus.TIMED_OUT):
         raise BadRequestException("The session is already closed or inactive.")
-    
+
     if session.host_user_id == user.id:
         # Host leaves: session ends for all
         session.status = SessionStatus.CLOSED
         session.closed_at = datetime.now(timezone.utc)
+        finalized_order_ids = await _finalize_session_orders(db, session_id)
+        await session_event_service.log_event(
+            db, session_id, SessionEventType.SESSION_CLOSED, actor_id=user.id,
+            payload={"reason": "Host left the session."},
+        )
         await db.flush()
-        return
+        return finalized_order_ids
 
     # Guest leaves
     member = next((m for m in session.members if m.user_id == user.id and m.status in (MemberStatus.APPROVED, MemberStatus.PENDING)), None)
@@ -283,6 +371,11 @@ async def leave_session(db: AsyncSession, session_id: UUID, user: User) -> None:
 
     member.status = MemberStatus.LEFT
     await db.flush()
+
+    await session_event_service.log_event(
+        db, session_id, SessionEventType.MEMBER_LEFT, actor_id=user.id,
+    )
+    return []
 
 
 async def transfer_host(db: AsyncSession, session_id: UUID, new_host_id: UUID, host_user: User) -> Session:

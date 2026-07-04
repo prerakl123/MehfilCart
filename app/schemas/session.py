@@ -6,6 +6,8 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from app.models.session import SessionStatus, MemberRole, MemberStatus
+from app.models.session_event import SessionEventType
+from app.schemas.order import OrderResponse
 
 
 class SessionCreate(BaseModel):
@@ -91,3 +93,21 @@ class SessionReopenRequest(BaseModel):
 class TransferHostRequest(BaseModel):
     """Host request to transfer hosting duty to another member."""
     new_host_id: UUID
+
+
+class SessionEventResponse(BaseModel):
+    """A single audit-log entry in a session's timeline."""
+    id: UUID
+    event_type: SessionEventType
+    actor_id: UUID | None
+    actor_name: str | None = None
+    payload: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SessionDetailResponse(SessionResponse):
+    """Full session details plus its orders and chronological event timeline."""
+    orders: list[OrderResponse] = []
+    events: list[SessionEventResponse] = []

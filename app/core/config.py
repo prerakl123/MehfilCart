@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = False
     APP_BASE_URL: str = "http://localhost:8000"
+    # Public URL of the customer-facing frontend (Vercel in prod). Table QR
+    # codes must encode this -- not APP_BASE_URL -- since /join/... is a
+    # frontend route, not a backend one.
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # -- Logging --
     LOG_LEVEL: str = "INFO"
@@ -64,6 +68,18 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    # -- Refresh-token cookie --
+    # Frontend (Vercel) and backend (Render) live on different registrable
+    # domains, so the refresh_token cookie is cross-site: it needs
+    # SameSite=None (which requires Secure) to be sent at all. Locally, the
+    # Next.js dev-server rewrite proxy (see MehfilCartUI/next.config.mjs)
+    # makes requests same-origin so SameSite=Lax also works there.
+    COOKIE_SAMESITE: str = "none"
+    COOKIE_SECURE: bool = True
+    # Only needed if frontend/backend ever share a registrable domain
+    # (e.g. app.example.com + api.example.com) -- leave unset otherwise.
+    COOKIE_DOMAIN: str | None = None
 
     # -- Super Admin Seed --
     # Seeded on first startup if no super admin exists

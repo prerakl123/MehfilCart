@@ -138,7 +138,7 @@ async def update_order_status(
     :returns: Updated OrderResponse.
     :raises BadRequestException: If the requested transition is not valid.
     """
-    order = await order_service.update_order_status(db, order_id, body.status)
+    order = await order_service.update_order_status(db, order_id, body.status, actor_id=current_user.id)
     try:
         order_dict = OrderResponse.model_validate(order).model_dump(mode="json")
         restaurant_id = order.session.table.restaurant_id

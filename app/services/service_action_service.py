@@ -10,7 +10,9 @@ from sqlalchemy.orm import joinedload
 from app.core.exceptions import NotFoundException, ForbiddenException
 from app.models.service_action import ServiceAction, ActionStatus, ActionType
 from app.models.session import Session, SessionStatus, SessionMember
+from app.models.session_event import SessionEventType
 from app.models.user import User
+from app.services import session_event_service
 from app.websocket.manager import ws_manager
 
 
@@ -44,6 +46,13 @@ async def create_service_action(
         requested_by_id=user.id,
     )
     db.add(action)
+    await db.flush()
+
+    await session_event_service.log_event(
+        db, session_id, SessionEventType.SERVICE_ACTION_REQUESTED, actor_id=user.id,
+        payload={"action_id": str(action.id), "action_type": action_type.value},
+    )
+
     await db.commit()
     await db.refresh(action)
 
@@ -95,6 +104,13 @@ async def claim_service_action(db: AsyncSession, action_id: UUID, user: User) ->
     action.status = ActionStatus.CLAIMED
     action.claimed_by_id = user.id
     action.claimed_at = datetime.utcnow()
+    await db.flush()
+
+    await session_event_service.log_event(
+        db, action.session_id, SessionEventType.SERVICE_ACTION_CLAIMED, actor_id=user.id,
+        payload={"action_id": str(action.id), "action_type": action.action_type.value},
+    )
+
     await db.commit()
     await db.refresh(action)
 
@@ -125,7 +141,13 @@ async def complete_service_action(db: AsyncSession, action_id: UUID, user: User)
     if not action.claimed_by_id:
         action.claimed_by_id = user.id
     action.completed_at = datetime.utcnow()
-    
+    await db.flush()
+
+    await session_event_service.log_event(
+        db, action.session_id, SessionEventType.SERVICE_ACTION_COMPLETED, actor_id=user.id,
+        payload={"action_id": str(action.id), "action_type": action.action_type.value},
+    )
+
     await db.commit()
     await db.refresh(action)
 
