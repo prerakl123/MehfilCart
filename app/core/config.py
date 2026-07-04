@@ -58,11 +58,24 @@ class Settings(BaseSettings):
     IDLE_TIMEOUT_MINUTES: int = 15
 
     # -- CORS --
-    CORS_ALLOWED_ORIGINS: list[str] = ["*"]
+    # Must be explicit origins (not "*") because the API sends credentials
+    # (cookies / Authorization headers). Browsers reject "*" with credentials.
+    CORS_ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # -- Super Admin Seed --
     # Seeded on first startup if no super admin exists
     SUPER_ADMIN_PHONE: str = "+919829778167"
+
+    # -- Geocoding / Maps --
+    # Provider used for address search + reverse geocoding. Swappable without
+    # touching call sites -- see app/services/geocoding/. Supported: "maptiler".
+    GEOCODING_PROVIDER: str = "maptiler"
+    # Server-side key for the geocoding provider. Kept on the backend so it is
+    # never exposed to the browser; the frontend calls our /admin/geocode proxy.
+    MAPTILER_API_KEY: str = ""
 
 
 settings = Settings()

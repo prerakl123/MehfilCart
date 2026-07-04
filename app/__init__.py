@@ -6,6 +6,7 @@ Auto-creates database tables and seeds the super admin on startup.
 """
 
 from fastapi import Response
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -14,7 +15,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.core.config import settings
 from app.core.database import async_session_factory
@@ -32,10 +34,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_application: FastAPI):
     """Startup/shutdown lifecycle: create tables and seed super admin."""
-    # Auto-create all tables if they don't exist
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables verified/created.")
+    await _init_database()
 
     # Seed a super admin user if none exists
     await _seed_super_admin()
@@ -45,6 +44,44 @@ async def lifespan(_application: FastAPI):
     # Shutdown: dispose the engine
     await engine.dispose()
     logger.info("Database engine disposed.")
+
+
+async def _init_database(max_attempts: int = 30, delay_seconds: float = 2.0) -> None:
+    """
+    Enable PostGIS and create tables, retrying until the database is reachable.
+
+    Under docker-compose the database may briefly refuse TCP connections on first
+    boot (it restarts once after running its init scripts) even after its
+    healthcheck passes, so we retry transient connection failures.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # PostGIS must be enabled before create_all so the
+            # restaurant_locations.geog geography column can be created.
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+                except Exception as exc:  # noqa: BLE001 -- clear, actionable message
+                    raise RuntimeError(
+                        "PostGIS is required (for restaurant location features) "
+                        "but is not available on the PostgreSQL server. Use a "
+                        "PostGIS-enabled image (e.g. postgis/postgis:16-3.4) or "
+                        "install the extension. Original error: " + str(exc)
+                    ) from exc
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables verified/created.")
+            return
+        except (OperationalError, DBAPIError, OSError) as exc:
+            last_exc = exc
+            logger.warning(
+                "Database not ready yet (attempt %d/%d): %s",
+                attempt, max_attempts, exc.__class__.__name__,
+            )
+            await asyncio.sleep(delay_seconds)
+    raise RuntimeError(
+        f"Database did not become available after {max_attempts} attempts."
+    ) from last_exc
 
 
 async def _seed_super_admin():

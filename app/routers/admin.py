@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_any_role
+from app.core.exceptions import NotFoundException
 from app.models.user import User
 from app.schemas.admin import (
     RestaurantDashboardStats, SuperAdminDashboardStats, 
@@ -15,12 +16,16 @@ from app.schemas.admin import (
     TableCreate, TableResponse, TableUpdate,
 )
 from app.schemas.auth import MessageResponse
+from app.schemas.location import (
+    GeocodeFeature, GeocodeSearchResponse, LocationUpsert,
+    RestaurantLocationResponse,
+)
 from app.schemas.order import OrderResponse
 from app.schemas.restaurant import (
     RestaurantCreate, RestaurantResponse, RestaurantUpdate,
 )
 from app.schemas.session import SessionResponse
-from app.services import admin_service
+from app.services import admin_service, location_service
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -142,6 +147,134 @@ async def delete_restaurant(
     """
     await admin_service.delete_restaurant(db, restaurant_id)
     return MessageResponse(message="Restaurant deleted successfully.")
+
+
+# -- Geocoding (address search / reverse), proxied so the key stays server-side --
+
+@router.get(
+    "/geocode/search",
+    response_model=GeocodeSearchResponse,
+    summary="Search Addresses",
+    description="Forward-geocode / autocomplete an address query.",
+    dependencies=[_admin_dep],
+)
+async def geocode_search(
+    q: str,
+    lat: float | None = None,
+    lng: float | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Forward-geocode a free-text address into ranked map suggestions.
+
+    :param q: Partial or full address text to search for.
+    :param lat: Optional latitude to bias results toward (with ``lng``).
+    :param lng: Optional longitude to bias results toward (with ``lat``).
+    :returns: GeocodeSearchResponse with normalized suggestions.
+    """
+    proximity = (lat, lng) if lat is not None and lng is not None else None
+    results = await location_service.search_addresses(q, proximity=proximity)
+    return GeocodeSearchResponse(
+        results=[GeocodeFeature(**vars(r)) for r in results]
+    )
+
+
+@router.get(
+    "/geocode/reverse",
+    response_model=GeocodeFeature,
+    summary="Reverse Geocode",
+    description="Reverse-geocode a coordinate into a formatted address.",
+    dependencies=[_admin_dep],
+)
+async def geocode_reverse(
+    lat: float,
+    lng: float,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Reverse-geocode a map coordinate into its closest formatted address.
+
+    :param lat: Latitude of the dropped pin.
+    :param lng: Longitude of the dropped pin.
+    :returns: The closest GeocodeFeature.
+    :raises NotFoundException: If no address was found for the coordinate.
+    """
+    result = await location_service.reverse_geocode(lat, lng)
+    if result is None:
+        raise NotFoundException("No address found for that location.")
+    return GeocodeFeature(**vars(result))
+
+
+# -- Restaurant Location (Super Admin & Restaurant Admin) --
+
+@router.get(
+    "/restaurants/{restaurant_id}/location",
+    response_model=RestaurantLocationResponse | None,
+    summary="Get Restaurant Location",
+    description="Get a restaurant's saved location, or null if not set.",
+    dependencies=[_admin_dep],
+)
+async def get_restaurant_location(
+    restaurant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retrieve a restaurant's saved location.
+
+    :param restaurant_id: UUID of the restaurant.
+    :returns: RestaurantLocationResponse, or null if no location is set.
+    """
+    return await location_service.get_location(db, restaurant_id)
+
+
+@router.put(
+    "/restaurants/{restaurant_id}/location",
+    response_model=RestaurantLocationResponse,
+    summary="Set Restaurant Location",
+    description="Create or replace a restaurant's location (pin + address).",
+    dependencies=[_admin_dep],
+)
+async def set_restaurant_location(
+    restaurant_id: UUID,
+    body: LocationUpsert,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create or replace a restaurant's location from a map pin and typed address.
+
+    :param restaurant_id: UUID of the restaurant to locate.
+    :param body: Coordinates plus the manually-typed formatted address.
+    :returns: The saved RestaurantLocationResponse including the map link.
+    :raises NotFoundException: If no restaurant with the given ID exists.
+    """
+    return await location_service.upsert_location(db, restaurant_id, body)
+
+
+@router.delete(
+    "/restaurants/{restaurant_id}/location",
+    response_model=MessageResponse,
+    summary="Delete Restaurant Location",
+    description="Remove a restaurant's saved location.",
+    dependencies=[_admin_dep],
+)
+async def delete_restaurant_location(
+    restaurant_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Remove a restaurant's saved location.
+
+    :param restaurant_id: UUID of the restaurant.
+    :returns: Confirmation message.
+    :raises NotFoundException: If no location is set for the restaurant.
+    """
+    await location_service.delete_location(db, restaurant_id)
+    return MessageResponse(message="Location removed.")
 
 
 @router.get(

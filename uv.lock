@@ -367,6 +367,19 @@ wheels = [
 ]
 
 [[package]]
+name = "geoalchemy2"
+version = "0.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/74/6cb1ef591bf47d28f41aa770f2f3a91c0a570aee0a4083bed7f8c533d8df/geoalchemy2-0.20.0.tar.gz", hash = "sha256:450f427f4bc3cf2d5ddee0af3763aed0f3eea2384e7c9a99798d8f1508279322", size = 280805, upload-time = "2026-05-12T14:50:26.132Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/08/b66ad4239f592e05202e25925c08cdd04cc14c3994000ec70ec61fea202c/geoalchemy2-0.20.0-py3-none-any.whl", hash = "sha256:1489a1d106519542a79c97cd0b4c537d80462c353610ebc2429cf2c43daac717", size = 96467, upload-time = "2026-05-12T14:50:24.998Z" },
+]
+
+[[package]]
 name = "greenlet"
 version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -668,6 +681,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "bcrypt" },
     { name = "fastapi" },
+    { name = "geoalchemy2" },
     { name = "httpx" },
     { name = "passlib" },
     { name = "pydantic-settings" },
@@ -685,6 +699,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "fastapi", specifier = ">=0.129.0" },
+    { name = "geoalchemy2", specifier = ">=0.15.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "passlib", specifier = ">=1.7.4" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
@@ -694,6 +709,15 @@ requires-dist = [
     { name = "redis", extras = ["hiredis"], specifier = ">=7.2.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.46" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
+]
+
+[[package]]
+name = "packaging"
+version = "26.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
 ]
 
 [[package]]

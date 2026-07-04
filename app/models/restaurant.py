@@ -31,6 +31,9 @@ class Restaurant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "Category", back_populates="restaurant", lazy="selectin")
     user_roles = relationship(
         "UserRole", back_populates="restaurant", lazy="selectin")
+    location = relationship(
+        "RestaurantLocation", back_populates="restaurant",
+        uselist=False, lazy="selectin", cascade="all, delete-orphan")
 
     def __repr__(self):
         """Return a human-readable representation of the Restaurant instance."""

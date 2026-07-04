@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.location import RestaurantLocationResponse
+
 
 class RestaurantCreate(BaseModel):
     """Request to register a new restaurant on the platform."""
@@ -36,5 +38,6 @@ class RestaurantResponse(BaseModel):
     logo_url: str | None
     config: dict | None
     is_active: bool
+    location: RestaurantLocationResponse | None = None
 
     model_config = {"from_attributes": True}

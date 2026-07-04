@@ -49,6 +49,11 @@ async def create_restaurant(
     )
     db.add(restaurant)
     await db.flush()
+    # Eagerly load the `location` relationship (None for a new restaurant) so it
+    # is available when the response is serialized -- a freshly-constructed
+    # object hasn't been through a SELECT, so the selectin loader hasn't run and
+    # accessing it during sync serialization would trigger a lazy load.
+    await db.refresh(restaurant, attribute_names=["location"])
     return restaurant
 
 
